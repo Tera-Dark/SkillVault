@@ -600,18 +600,17 @@ app.post('/api/trash/:category/:filename/restore', async (req, res) => {
   }
 });
 
-// 移送至 Windows 回收站核心方法 (使用 spawn 配合参数绑定，杜绝命令注入)
+// 移送至 Windows 回收站核心方法 (使用 spawn 配合 stdin 管道传参，100% 免疫命令行转义与引号注入问题)
 function moveToWindowsRecycleBin(filePath) {
   return new Promise((resolve, reject) => {
     const absolutePath = path.resolve(filePath);
     
     // 使用 PowerShell Microsoft.VisualBasic.FileIO.FileSystem 移入回收站
-    // 使用 param($path) 参数绑定机制，确保哪怕路径带有引号、分号、空格或特殊字符也绝不会发生注入
+    // 通过 stdin 输入路径并使用 [Console]::In.ReadLine() 动态读取，绕过命令行解析，从根本上解决包含单引号、特殊符号等文件名报错的问题
     const ps = spawn('powershell', [
       '-NoProfile',
       '-Command',
-      "param($path); Add-Type -AssemblyName Microsoft.VisualBasic; [Microsoft.VisualBasic.FileIO.FileSystem]::DeleteFile($path, 'OnlyErrorDialogs', 'SendToRecycleBin')",
-      absolutePath
+      "[Console]::InputEncoding = [System.Text.Encoding]::UTF8; [Console]::OutputEncoding = [System.Text.Encoding]::UTF8; $path = [Console]::In.ReadLine(); Add-Type -AssemblyName Microsoft.VisualBasic; [Microsoft.VisualBasic.FileIO.FileSystem]::DeleteFile($path, 'OnlyErrorDialogs', 'SendToRecycleBin')"
     ]);
 
     let stderr = '';
@@ -627,6 +626,10 @@ function moveToWindowsRecycleBin(filePath) {
         resolve(true);
       }
     });
+
+    // 写入绝对路径（以换行符结尾）并关闭标准输入，让 ReadLine() 能够读取到
+    ps.stdin.write(absolutePath + '\n', 'utf-8');
+    ps.stdin.end();
   });
 }
 
