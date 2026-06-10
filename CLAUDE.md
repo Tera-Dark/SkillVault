@@ -39,6 +39,14 @@
   - 彻底删除和清空垃圾桶时，必须使用更安全的 `child_process.spawn('powershell', [...])` 启动 PowerShell。
   - 必须通过 `param($path)` 参数绑定机制来接收文件路径常量，严禁使用 `exec` 拼接命令行字符串，以彻底杜绝命令注入漏洞。
   - 命令调用 `[Microsoft.VisualBasic.FileIO.FileSystem]::DeleteFile` 将文件安全移入 Windows 系统回收站。出错时降级为 `fs.remove`。
+- **Git 版本时光机与串行化提交**:
+  - 系统在启动或切换目录时自动检测并静默初始化 Git 仓库，设置局部身份（`user.name: SkillVault` / `user.email: backup@skillvault.local`）以防提交报错。
+  - 在卡片创建、更新、重命名、星标及彻底删除/还原时，在后台自动执行 Git 增量提交。
+  - **红线**：所有 Git 写操作（`add`、`commit` 等）必须通过 `gitWriteQueue` 串行执行，以防并发文件锁冲突；在 API 路由中必须 `await` 提交完成，以保持前、后端版本历史数据的同步一致。
+  - 时光机回滚时运行 `git checkout <commitHash> -- <relativePath>`。
+- **PowerShell ZIP 全量备份与防丢失恢复**:
+  - 备份逻辑：利用 Windows PowerShell 的 `Compress-Archive`，将除 `.git`、`.trash` 和 `backups` 外的所有文件打包压缩至 `backups/` 目录下。
+  - 还原逻辑：利用 `Expand-Archive` 解压还原备份。还原前**必须强制自动创建一个紧急最新状态备份**（`emergency-auto-backup.zip`）进行防呆降级防护。
 - **防止路径穿越与越权**:
   - 在所有涉及文件读取和写入的接口中，使用 `path.relative` 计算相对路径来检查路径安全性，阻止前缀和目录穿越绕过。
   - 局域网模式下禁止非 localhost 客户端修改工作区目录（`isLocalRequest` 校验）；禁止将挂载路径指向敏感的系统关键文件夹（`isForbiddenSystemPath` 过滤）。
@@ -71,3 +79,10 @@
 | **DELETE** | `/api/trash/:category/:filename/permanent` | 物理彻底删除（使用 PowerShell 投递至系统回收站） |
 | **DELETE** | `/api/trash/empty` | 清空垃圾桶（批量使用 PowerShell 投递至系统回收站） |
 | **GET** | `/api/skills/:category/:filename/download` | 下载技能包的原始 Markdown 文件 |
+| **GET** | `/api/skills/:category/:filename/history` | 获取文件的 Git 版本历史列表 |
+| **GET** | `/api/skills/:category/:filename/history/:commitHash` | 读取历史版本文件快照 |
+| **POST** | `/api/skills/:category/:filename/history/:commitHash/rollback` | 一键时光回滚到指定历史版本 |
+| **POST** | `/api/backups/export` | 立即创建安全 ZIP 物理全量备份 |
+| **GET** | `/api/backups` | 列出所有本地已备份 ZIP 文件列表 |
+| **POST** | `/api/backups/:backupName/restore` | 从指定备份恢复（前置强制自动紧急备份） |
+| **DELETE** | `/api/backups/:backupName` | 物理彻底删除指定备份文件 |
