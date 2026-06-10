@@ -98,6 +98,243 @@ const RotateCcwIcon = ({ size = 16 }) => (
   <svg className="svg-icon" xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><polyline points="3 3 3 8 8 8"/></svg>
 );
 
+// ==========================================================================
+// Environment-Aware Demo Mode (Vercel In-Memory DB Showcase)
+// ==========================================================================
+const isLocalOrLAN = window.location.hostname === 'localhost' || 
+                     window.location.hostname === '127.0.0.1' || 
+                     /^192\.168\./.test(window.location.hostname) ||
+                     /^10\./.test(window.location.hostname) ||
+                     /^172\.(1[6-9]|2[0-9]|3[0-1])\./.test(window.location.hostname);
+const isDemoMode = !isLocalOrLAN;
+
+if (isDemoMode) {
+  let mockSkills = [
+    {
+      title: "SkillVault 简介与 Lovart 极简美学",
+      category: "系统介绍",
+      description: "欢迎体验 SkillVault，这是专为开发者设计的画廊风本地 Markdown 技能管理平台。本篇为您介绍本系统的视觉理念和核心功能。",
+      tags: ["Lovart", "Design", "Minimalist"],
+      filename: "SkillVault-简介与-Lovart-极简美学.md",
+      updatedAt: new Date().toISOString(),
+      createdAt: new Date().toISOString(),
+      star: true,
+      content: `# SkillVault 简介与 Lovart 极简美学\n\n欢迎体验 **SkillVault**。这是一款去数据库设计的本地个人技能管理平台。目前您正在查看的是部署在 Vercel 上的**只读交互演示版本 (Showcase)**。\n\n## 🎨 Lovart 视觉美学\n\n本软件的核心视觉风格是“极简画廊黑白风 (Lovart Minimalist)”：\n- **去投影、去渐变**：大面积使用灰白色块，利用物理堆叠与间距传达层次感。\n- **外置排版**：标题、分类和标签一律不在卡片容器内，而是放置于下方，使容器内部极其纯净。\n- **极细线条**：系统全部图标采用 1.5px 极细线条 SVG，摒弃粗重的 Emoji。\n\n## 📂 “文档即数据”\n\n在本地运行时，SkillVault 不需要连接数据库：\n1. 所有技能全部存放在您磁盘里的 \`.md\` 文件夹中；\n2. 星标、标题、标签等元数据直接以 YAML Front Matter 格式写入文件头部；\n3. 通过这种设计，您的知识库是 100% 透明和可移动的。\n\n## 🛡️ 安全双重确认\n\n平台实现了一套完整的安全阻断，防止您在编辑时手抖造成数据丢失：\n- **移入垃圾桶**：剪切移动到隐藏的 \`.trash\` 目录；\n- **彻底删除**：后端直接调用 Windows 系统的 PowerShell COM 组件，将文件原生送进 **Windows 桌面回收站**；\n- **未保存退出拦截**：如果检测到修改，退出编辑器时会进行三合一警告拦截。\n\n> 💡 *提示：在演示模式下，您的所有修改、星标与删除动作仅在浏览器内存中临时生效，刷新后复原，不会修改您的本地磁盘。*`
+    },
+    {
+      title: "React 双栏编辑器同步滚动设计",
+      category: "技术架构",
+      description: "本篇介绍 SkillVault 的 Markdown 编辑器如何通过计算高度比例实现源码区与实时预览区的 100% 同步滚动设计。",
+      tags: ["React", "Vite", "Scroll"],
+      filename: "React-双栏编辑器同步滚动设计.md",
+      updatedAt: new Date(Date.now() - 3600000).toISOString(),
+      createdAt: new Date(Date.now() - 3600000).toISOString(),
+      star: false,
+      content: `# React 双栏编辑器同步滚动设计\n\n在 Markdown 编辑器中，实现源码输入框 (\`textarea\`) 和渲染预览区 (\`div.preview-body\`) 的同步滚动是一个提升写作体验的关键痛点。\n\n## 📐 算法原理\n\n传统的同步滚动是通过让双方的 \`scrollTop\` 保持一致来实现的。然而，由于 Markdown 源码段落高度（含大量 YAML 标记）与渲染后的 HTML 真实高度并不相等，单纯的 \`scrollTop\` 对齐会导致严重的滚动错位。\n\nSkillVault 采用了基于**滚动百分比 (Scroll Percentage)** 的同步滚动算法：\n\n\`\`\`javascript\nconst handleEditorScroll = (e) => {\n  const textarea = e.target;\n  const preview = previewBodyRef.current;\n  if (!textarea || !preview) return;\n\n  // 计算源码区当前滚动的百分比\n  const scrollPercentage = textarea.scrollTop / (textarea.scrollHeight - textarea.clientHeight);\n  \n  // 按比例映射给预览区\n  preview.scrollTop = scrollPercentage * (preview.scrollHeight - preview.clientHeight);\n};\n\`\`\`\n\n## ⚡ 优点\n- **零延迟**：不需要监听复杂的 DOM node 高度变化；\n- **简单可靠**：通过比例映射保证了当源码滚动到底部时，预览也完美到底部，消成了截断的烦恼。`
+    },
+    {
+      title: "Windows PowerShell 系统回收站对接细节",
+      category: "后端开发",
+      description: "探讨在 Node.js Express 后端中执行 native Windows PowerShell COM 命令将物理文件投递到桌面回收站的安全删除逻辑。",
+      tags: ["NodeJS", "PowerShell", "Windows"],
+      filename: "Windows-PowerShell-系统回收站对接细节.md",
+      updatedAt: new Date(Date.now() - 7200000).toISOString(),
+      createdAt: new Date(Date.now() - 7200000).toISOString(),
+      star: false,
+      content: `# Windows PowerShell 系统回收站对接细节\n\n传统的 Node.js \`fs.unlink\` 删除文件是无法撤销的物理抹除，一旦误删会给用户带来不可挽回的损失。\n\n为了给用户提供媲美 Windows 系统原生的安全感，SkillVault 设计了将彻底删除的文件投递至 Windows 桌面回收站的方案。\n\n## 🛠️ PowerShell Native COM 的调用\n\n在 Windows 系统中，我们可以通过 \`Add-Type -AssemblyName Microsoft.VisualBasic\` 导入 .NET 类库，并调用其中的 \`DeleteFile\` 方法，其第三个参数 \`SendToRecycleBin\` 可以直接将物理路径投递至系统回收站：\n\n\`\`\`javascript\nfunction moveToWindowsRecycleBin(filePath) {\n  return new Promise((resolve, reject) => {\n    const absolutePath = path.resolve(filePath);\n    const cmd = \`powershell -NoProfile -Command \"Add-Type -AssemblyName Microsoft.VisualBasic; [Microsoft.VisualBasic.FileIO.FileSystem]::DeleteFile('\${absolutePath}', 'OnlyErrorDialogs', 'SendToRecycleBin')\"\`;\n    \n    exec(cmd, (err, stdout, stderr) => {\n      if (err) {\n        // 降级机制：如果 PowerShell 执行失败，则使用物理 fs.remove\n        console.error('PowerShell 失败，降级物理删除');\n        fs.remove(filePath).then(() => resolve(true)).catch(reject);\n      } else {\n        resolve(true);\n      }\n    });\n  });\n}\n\`\`\`\n\n## 🛡️ 安全降级设计\n如果用户运行在 Linux、macOS 或者是系统没有配置 PowerShell 的精简 Windows 下，系统会在捕获错误后自动降级执行普通的文件彻底删除，确保业务逻辑闭环，安全网非常牢固。`
+    }
+  ];
+
+  let mockTrash = [
+    {
+      title: "这是一篇已被软删除的旧草稿",
+      category: "未分类",
+      description: "此项目当前在垃圾桶中，演示如何在内存中将其恢复或彻底删除。",
+      tags: ["Draft", "Trash"],
+      filename: "这是一篇已被软删除的旧草稿.md",
+      updatedAt: new Date(Date.now() - 86400000).toISOString(),
+      deletedAt: new Date(Date.now() - 86400000).toISOString(),
+      content: `# 这是一篇已被软删除的旧草稿\n\n这是为了向您展示 **SkillVault 垃圾桶功能** 的 Mock 数据。\n\n您可以点击卡片右下角的：\n- **恢复 ↩️** 按钮：将其从垃圾桶原路放回主列表中；\n- **彻底删除 ❌** 按钮：触发带有 🚨 警示的高级二次确认 Modal。`
+    }
+  ];
+
+  // 备份原生的 fetch
+  const originalFetch = window.fetch;
+
+  // 劫持全局 fetch
+  window.fetch = function(url, options) {
+    const urlStr = url.toString();
+    const method = (options && options.method || 'GET').toUpperCase();
+
+    // 辅助返回模拟的 Response 对象
+    const jsonResponse = (data, status = 200) => {
+      return Promise.resolve(new Response(JSON.stringify(data), {
+        status: status,
+        headers: { 'Content-Type': 'application/json' }
+      }));
+    };
+
+    // 1. GET /api/config
+    if (urlStr.includes('/api/config') && method === 'GET') {
+      return jsonResponse({ skillsDir: 'Vercel 云端演示空间', isCustomConfigured: true });
+    }
+
+    // 2. POST /api/config
+    if (urlStr.includes('/api/config') && method === 'POST') {
+      return jsonResponse({ success: true, skillsDir: 'Vercel 云端演示空间' });
+    }
+
+    // 3. GET /api/skills
+    if (urlStr.includes('/api/skills') && method === 'GET' && !urlStr.includes('/download')) {
+      return jsonResponse(mockSkills);
+    }
+
+    // 4. GET /api/skills/:category/:filename
+    if (urlStr.includes('/api/skills/') && method === 'GET' && !urlStr.includes('/download') && !urlStr.endsWith('/star')) {
+      const parts = urlStr.split('/api/skills/');
+      if (parts.length > 1) {
+        const decoded = decodeURIComponent(parts[1]);
+        const fileParts = decoded.split('/');
+        const filename = fileParts[fileParts.length - 1];
+        const match = mockSkills.find(s => s.filename === filename);
+        if (match) {
+          return jsonResponse(match);
+        }
+      }
+      return jsonResponse({ error: '文件未找到' }, 404);
+    }
+
+    // 5. POST /api/skills
+    if (urlStr.includes('/api/skills') && method === 'POST') {
+      const body = JSON.parse(options.body);
+      const newSkill = {
+        title: body.title,
+        category: body.category || '未分类',
+        description: body.description || '',
+        tags: body.tags || [],
+        content: body.content || '',
+        filename: `${body.title}.md`,
+        updatedAt: new Date().toISOString(),
+        star: !!body.star
+      };
+      mockSkills = [newSkill, ...mockSkills];
+      return jsonResponse({ success: true, filename: newSkill.filename, category: newSkill.category });
+    }
+
+    // 6. PUT /api/skills/:category/:filename
+    if (urlStr.includes('/api/skills/') && method === 'PUT') {
+      const parts = urlStr.split('/api/skills/');
+      if (parts.length > 1) {
+        const decoded = decodeURIComponent(parts[1]);
+        const fileParts = decoded.split('/');
+        const oldFilename = fileParts[fileParts.length - 1];
+        
+        const body = JSON.parse(options.body);
+        const updatedSkill = {
+          title: body.title,
+          category: body.category || '未分类',
+          description: body.description || '',
+          tags: body.tags || [],
+          content: body.content || '',
+          filename: oldFilename,
+          updatedAt: new Date().toISOString(),
+          star: !!body.star
+        };
+        mockSkills = mockSkills.map(s => s.filename === oldFilename ? updatedSkill : s);
+        return jsonResponse({ success: true, filename: oldFilename, category: updatedSkill.category });
+      }
+      return jsonResponse({ error: '保存失败' }, 500);
+    }
+
+    // 7. POST /api/skills/:category/:filename/star
+    if (urlStr.includes('/star') && method === 'POST') {
+      const parts = urlStr.split('/api/skills/');
+      if (parts.length > 1) {
+        const decoded = parts[1].split('/star')[0];
+        const fileParts = decodeURIComponent(decoded).split('/');
+        const filename = fileParts[fileParts.length - 1];
+        const body = JSON.parse(options.body);
+        
+        mockSkills = mockSkills.map(s => {
+          if (s.filename === filename) {
+            return { ...s, star: !!body.star };
+          }
+          return s;
+        });
+        return jsonResponse({ success: true, star: !!body.star });
+      }
+      return jsonResponse({ error: '收藏失败' }, 500);
+    }
+
+    // 8. DELETE /api/skills/:category/:filename
+    if (urlStr.includes('/api/skills/') && method === 'DELETE') {
+      const parts = urlStr.split('/api/skills/');
+      if (parts.length > 1) {
+        const decoded = decodeURIComponent(parts[1]);
+        const fileParts = decoded.split('/');
+        const filename = fileParts[fileParts.length - 1];
+        const match = mockSkills.find(s => s.filename === filename);
+        if (match) {
+          mockSkills = mockSkills.filter(s => s.filename !== filename);
+          mockTrash = [{ ...match, deletedAt: new Date().toISOString() }, ...mockTrash];
+          return jsonResponse({ success: true, message: '已移入垃圾桶' });
+        }
+      }
+      return jsonResponse({ error: '删除失败' }, 500);
+    }
+
+    // 9. GET /api/trash
+    if (urlStr.includes('/api/trash') && method === 'GET') {
+      return jsonResponse(mockTrash);
+    }
+
+    // 10. POST /api/trash/:category/:filename/restore
+    if (urlStr.includes('/restore') && method === 'POST') {
+      const parts = urlStr.split('/api/trash/');
+      if (parts.length > 1) {
+        const decoded = parts[1].split('/restore')[0];
+        const fileParts = decodeURIComponent(decoded).split('/');
+        const filename = fileParts[fileParts.length - 1];
+        const match = mockTrash.find(s => s.filename === filename);
+        if (match) {
+          mockTrash = mockTrash.filter(s => s.filename !== filename);
+          mockSkills = [match, ...mockSkills];
+          return jsonResponse({ success: true });
+        }
+      }
+      return jsonResponse({ error: '恢复失败' }, 500);
+    }
+
+    // 11. DELETE /api/trash/:category/:filename/permanent
+    if (urlStr.includes('/permanent') && method === 'DELETE') {
+      const parts = urlStr.split('/api/trash/');
+      if (parts.length > 1) {
+        const decoded = parts[1].split('/permanent')[0];
+        const fileParts = decodeURIComponent(decoded).split('/');
+        const filename = fileParts[fileParts.length - 1];
+        mockTrash = mockTrash.filter(s => s.filename !== filename);
+        return jsonResponse({ success: true });
+      }
+      return jsonResponse({ error: '彻底删除失败' }, 500);
+    }
+
+    // 12. DELETE /api/trash/empty
+    if (urlStr.includes('/api/trash/empty') && method === 'DELETE') {
+      mockTrash = [];
+      return jsonResponse({ success: true });
+    }
+
+    // 13. 下载
+    if (urlStr.includes('/download')) {
+      alert("演示空间：直接通过浏览器触发 Markdown 二进制流下载。");
+      return Promise.resolve(new Response(null, { status: 200 }));
+    }
+
+    // 兜底退回原生 fetch
+    return originalFetch(url, options);
+  };
+}
+
 export default function App() {
   // 状态管理
   const [skills, setSkills] = useState([]);
