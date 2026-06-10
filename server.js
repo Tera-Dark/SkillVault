@@ -293,6 +293,35 @@ app.put('/api/skills/:oldCategory/:oldFilename', async (req, res) => {
   }
 });
 
+// API: 收藏/取消收藏 Skill
+app.post('/api/skills/:category/:filename/star', async (req, res) => {
+  const category = decodeURIComponent(req.params.category);
+  const filename = decodeURIComponent(req.params.filename);
+  const { star } = req.body;
+
+  try {
+    const skillsDir = await getSkillsDir();
+    const filePath = category === '未分类'
+      ? path.join(skillsDir, filename)
+      : path.join(skillsDir, category, filename);
+
+    if (!(await fs.pathExists(filePath))) {
+      return res.status(404).json({ error: '文件不存在' });
+    }
+
+    const content = await fs.readFile(filePath, 'utf-8');
+    const parsed = matter(content);
+    parsed.data.star = !!star;
+
+    const newContent = matter.stringify(parsed.content, parsed.data);
+    await fs.writeFile(filePath, newContent, 'utf-8');
+
+    res.json({ success: true, star: !!star });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // API: 删除 Skill (软删除移入本地垃圾桶)
 app.delete('/api/skills/:category/:filename', async (req, res) => {
   const category = decodeURIComponent(req.params.category);
