@@ -387,6 +387,23 @@ export default function App() {
   // 临时设置路径
   const [tempPath, setTempPath] = useState('');
   
+  // ==========================================
+  // Git 版本时光机 & 安全备份 React 状态
+  // ==========================================
+  const [backups, setBackups] = useState([]); // 备份列表
+  const [backupLoading, setBackupLoading] = useState(false); // 备份操作加载状态
+  const [isRestoreConfirmOpen, setIsRestoreConfirmOpen] = useState(false); // 恢复备份二次确认
+  const [selectedRestoreBackup, setSelectedRestoreBackup] = useState(null); // 待恢复的备份项
+  
+  const [historyList, setHistoryList] = useState([]); // 当前查看文件的 Git 提交历史
+  const [isHistorySupported, setIsHistorySupported] = useState(true); // 是否支持 Git
+  const [isHistoryOpen, setIsHistoryOpen] = useState(false); // 历史时光机侧边滑出面板是否打开
+  const [selectedHistoryCommit, setSelectedHistoryCommit] = useState(null); // 正在预览的历史提交 commitHash
+  const [historySkillDetail, setHistorySkillDetail] = useState(null); // 预览的特定历史版本 Skill 详情
+  const [isRollbackConfirmOpen, setIsRollbackConfirmOpen] = useState(false); // 回滚确认弹窗
+  const [rollbackCommitHash, setRollbackCommitHash] = useState(''); // 待回退的 commit hash
+  
+  
   // 用于截图的 Ref
   const shareCardRef = useRef(null);
   const editorTextareaRef = useRef(null); // 编辑器 Textarea Ref
@@ -735,6 +752,156 @@ export default function App() {
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [isEditOpen, currentSkill]);
+
+  // ==========================================
+  // Git 版本时光机 & 安全备份 React 业务逻辑
+  // ==========================================
+  
+  // 1. 获取本地备份列表
+  const fetchBackups = async () => {
+    try {
+      const res = await fetch('/api/backups');
+      if (res.ok) {
+        const data = await res.json();
+        setBackups(data);
+      }
+    } catch (e) {
+      console.error('获取备份列表失败:', e);
+    }
+  };
+
+  // 2. 立即执行物理备份打包 (ZIP)
+  const handleCreateBackup = async () => {
+    setBackupLoading(true);
+    try {
+      const res = await fetch('/api/backups/export', { method: 'POST' });
+      if (res.ok) {
+        await fetchBackups();
+      } else {
+        const err = await res.json();
+        alert(`备份打包失败: ${err.error}`);
+      }
+    } catch (e) {
+      alert('备份打包请求出错，请重试');
+    } finally {
+      setBackupLoading(false);
+    }
+  };
+
+  // 3. 删除指定 zip 备份文件
+  const handleDeleteBackup = async (backupName) => {
+    if (!confirm(`您确定要彻底删除备份 ${backupName} 吗？此操作无法恢复！`)) return;
+    try {
+      const res = await fetch(`/api/backups/${encodeURIComponent(backupName)}`, { method: 'DELETE' });
+      if (res.ok) {
+        await fetchBackups();
+      } else {
+        const err = await res.json();
+        alert(`删除备份失败: ${err.error}`);
+      }
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  // 4. 执行备份恢复 (Restore)
+  const handleRestoreBackup = async () => {
+    if (!selectedRestoreBackup) return;
+    setBackupLoading(true);
+    setIsRestoreConfirmOpen(false);
+    try {
+      const res = await fetch(`/api/backups/${encodeURIComponent(selectedRestoreBackup)}/restore`, { method: 'POST' });
+      if (res.ok) {
+        alert('🎉 备份恢复成功！工作目录已同步还原重载。');
+        setIsSettingsOpen(false);
+        fetchConfig();
+        fetchSkills();
+      } else {
+        const err = await res.json();
+        alert(`恢复备份失败: ${err.error}`);
+      }
+    } catch (e) {
+      alert('恢复备份请求出错，请重试');
+    } finally {
+      setBackupLoading(false);
+      setSelectedRestoreBackup(null);
+    }
+  };
+
+  // 5. 获取当前文件的 Git 提交历史线
+  const fetchHistory = async () => {
+    if (!viewedSkill) return;
+    try {
+      const res = await fetch(`/api/skills/${encodeURIComponent(viewedSkill.category)}/${encodeURIComponent(viewedSkill.filename)}/history`);
+      if (res.ok) {
+        const data = await res.json();
+        setIsHistorySupported(!!data.supported);
+        setHistoryList(data.history || []);
+      }
+    } catch (e) {
+      console.error('获取历史版本失败:', e);
+    }
+  };
+
+  // 6. 预览特定提交的历史版本内容
+  const previewHistoryVersion = async (commitHash) => {
+    if (!viewedSkill) return;
+    try {
+      const res = await fetch(`/api/skills/${encodeURIComponent(viewedSkill.category)}/${encodeURIComponent(viewedSkill.filename)}/history/${commitHash}`);
+      if (res.ok) {
+        const data = await res.json();
+        setHistorySkillDetail(data);
+        setSelectedHistoryCommit(commitHash);
+      } else {
+        const err = await res.json();
+        alert(`加载历史快照失败: ${err.error}`);
+      }
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  // 7. 确认执行 Git 时光机回退 (Rollback)
+  const handleRollback = async () => {
+    if (!viewedSkill || !rollbackCommitHash) return;
+    setIsRollbackConfirmOpen(false);
+    try {
+      const res = await fetch(`/api/skills/${encodeURIComponent(viewedSkill.category)}/${encodeURIComponent(viewedSkill.filename)}/history/${rollbackCommitHash}/rollback`, { method: 'POST' });
+      if (res.ok) {
+        alert('⏳ 时光回退成功！该技能包已回滚至指定版本。');
+        setIsHistoryOpen(false);
+        setSelectedHistoryCommit(null);
+        setHistorySkillDetail(null);
+        
+        // 重新拉取当前被查看文件的最新正文渲染
+        const detailRes = await fetch(`/api/skills/${encodeURIComponent(viewedSkill.category)}/${encodeURIComponent(viewedSkill.filename)}`);
+        if (detailRes.ok) {
+          const detail = await detailRes.json();
+          setViewedSkill(detail);
+        }
+        fetchSkills(); // 同步列表元数据状态
+      } else {
+        const err = await res.json();
+        alert(`时光机回退失败: ${err.error}`);
+      }
+    } catch (e) {
+      alert('回滚请求出错，请重试');
+    }
+  };
+
+  // 当设置面板开启时加载备份
+  useEffect(() => {
+    if (isSettingsOpen) {
+      fetchBackups();
+    }
+  }, [isSettingsOpen]);
+
+  // 当时光机面板开启时加载 Git 历史
+  useEffect(() => {
+    if (isHistoryOpen && viewedSkill) {
+      fetchHistory();
+    }
+  }, [isHistoryOpen, viewedSkill]);
 
   // 获取后端配置路径
   const fetchConfig = async (autoShow = false) => {
@@ -1728,8 +1895,91 @@ export default function App() {
                 <div style={{ background: 'rgba(255,255,255,0.02)', padding: '16px', borderRadius: '12px', border: '1px solid var(--border-color)', marginTop: '16px' }}>
                   <h4 style={{ fontSize: '13px', marginBottom: '8px', color: 'var(--text-active)' }}>📶 局域网分享状态</h4>
                   <p style={{ fontSize: '12px', color: 'var(--text-muted)', lineHeight: '1.6' }}>
-                    本平台已开启局域网广播。局域网内的其它设备（如同局域网下的手机或平板）可以直接访问您的局域网 IP:3000 进行实时查看与共享。您可以在启动的 CMD 控制台中看到具体的局域网访问地址。
+                    本平台已开启局域网广播。开发模式下局域网内的其它设备可以直接访问您的局域网地址进行查看共享（端口详见控制台输出）。
                   </p>
+                </div>
+
+                {/* 2.2 安全备份中心 (PowerShell Backup Control Box) */}
+                <div style={{ background: 'rgba(255,255,255,0.02)', padding: '16px', borderRadius: '12px', border: '1px solid var(--border-color)', marginTop: '16px' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+                    <h4 style={{ fontSize: '13px', color: 'var(--text-active)', margin: 0 }}>📦 安全数据备份</h4>
+                    <button 
+                      type="button" 
+                      onClick={handleCreateBackup}
+                      disabled={backupLoading}
+                      className="btn btn-secondary btn-sm"
+                      style={{ fontSize: '11px', padding: '6px 12px' }}
+                    >
+                      {backupLoading ? '打包中...' : '立即创建安全备份'}
+                    </button>
+                  </div>
+                  <p style={{ fontSize: '12px', color: 'var(--text-muted)', lineHeight: '1.6', marginBottom: '12px' }}>
+                    基于 Windows 原生模块将工作区所有 Markdown 技能包打包为 Zip 格式物理映射归档。支持随时原路还原。
+                  </p>
+
+                  <div className="backup-list-box" style={{ maxHeight: '180px', overflowY: 'auto', border: '1px solid var(--border-color)', borderRadius: '8px', background: 'rgba(0,0,0,0.1)' }}>
+                    {backups.length === 0 ? (
+                      <div style={{ padding: '16px', textAlign: 'center', fontSize: '12px', color: 'var(--text-muted)' }}>
+                        暂无历史备份，点击上方按钮立即创建。
+                      </div>
+                    ) : (
+                      backups.map((bk) => {
+                        const isEmergency = bk.name.includes('emergency');
+                        const sizeStr = bk.size < 1024 * 1024 
+                          ? (bk.size / 1024).toFixed(1) + ' KB'
+                          : (bk.size / (1024 * 1024)).toFixed(1) + ' MB';
+                        
+                        return (
+                          <div 
+                            key={bk.name}
+                            className="backup-item" 
+                            style={{ 
+                              display: 'flex', 
+                              justifyContent: 'space-between', 
+                              alignItems: 'center', 
+                              padding: '10px 12px', 
+                              borderBottom: '1px solid var(--border-color)',
+                              fontSize: '12px'
+                            }}
+                          >
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', maxWidth: '70%' }}>
+                              <span style={{ 
+                                textOverflow: 'ellipsis', 
+                                overflow: 'hidden', 
+                                whiteSpace: 'nowrap',
+                                color: isEmergency ? '#f59e0b' : 'var(--text-active)',
+                                fontWeight: isEmergency ? 'bold' : 'normal'
+                              }}>
+                                {isEmergency ? '⚠️ 紧急备份:' : '💾'} {bk.name}
+                              </span>
+                              <span style={{ fontSize: '10px', color: 'var(--text-muted)' }} className="tabular-nums">
+                                大小: {sizeStr} | 创建时间: {new Date(bk.createdAt).toLocaleString()}
+                              </span>
+                            </div>
+                            
+                            <div style={{ display: 'flex', gap: '8px' }}>
+                              <button
+                                type="button"
+                                onClick={() => { setSelectedRestoreBackup(bk.name); setIsRestoreConfirmOpen(true); }}
+                                className="btn btn-secondary btn-sm"
+                                style={{ fontSize: '11px', padding: '3px 8px', border: '1px solid #10b981', color: '#10b981' }}
+                              >
+                                还原
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => handleDeleteBackup(bk.name)}
+                                className="btn btn-secondary btn-sm text-danger"
+                                style={{ fontSize: '11px', padding: '3px 8px' }}
+                              >
+                                删除
+                              </button>
+                            </div>
+                          </div>
+                        );
+                      })
+                    )}
+                  </div>
                 </div>
               </div>
               <div className="modal-footer">
@@ -1956,6 +2206,16 @@ export default function App() {
                 >
                   <DownloadIcon /> 下载 md
                 </a>
+
+                {/* Git 历史时光机按钮 */}
+                <button 
+                  className={`btn btn-secondary ${isHistoryOpen ? 'active' : ''}`}
+                  onClick={() => setIsHistoryOpen(!isHistoryOpen)}
+                  style={{ display: 'flex', alignItems: 'center', gap: '4px' }}
+                  title="历史版本时光机"
+                >
+                  ⏳ 历史版本
+                </button>
                 
                 <button className="modal-close-btn" style={{ marginLeft: '12px', display: 'flex', alignItems: 'center' }} onClick={() => setIsViewOpen(false)}><CloseIcon /></button>
               </div>
@@ -2030,6 +2290,73 @@ export default function App() {
                     )}
                   </div>
                 </div>
+
+                {/* 3.1 极细三列式 Git 时光机历史线面板 */}
+                {isHistoryOpen && (
+                  <div className="viewer-history" style={{ width: '280px', flexShrink: 0, borderLeft: '1px solid var(--border-color)', display: 'flex', flexDirection: 'column', height: '100%', background: 'rgba(0,0,0,0.05)' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '16px 20px', borderBottom: '1px solid var(--border-color)' }}>
+                      <span style={{ fontSize: '13px', fontWeight: 'bold', color: 'var(--text-active)' }}>⏳ 版本历史</span>
+                      <button className="modal-close-btn" style={{ fontSize: '11px', display: 'flex', alignItems: 'center', padding: '4px' }} onClick={() => setIsHistoryOpen(false)}><CloseIcon /></button>
+                    </div>
+                    
+                    <div style={{ flex: 1, overflowY: 'auto', padding: '20px' }}>
+                      {!isHistorySupported ? (
+                        <div style={{ fontSize: '12px', color: 'var(--text-weak)', textAlign: 'center', marginTop: '20px' }}>
+                          ⚠️ 系统未安装或检测到 Git，时光机不可用。
+                        </div>
+                      ) : historyList.length === 0 ? (
+                        <div style={{ fontSize: '12px', color: 'var(--text-weak)', textAlign: 'center', marginTop: '20px' }}>
+                          暂无提交记录。首次创建、编辑、收藏或回退后将在此生成时光节点。
+                        </div>
+                      ) : (
+                        <div className="history-timeline" style={{ borderLeft: '1px solid var(--border-color)', marginLeft: '6px', paddingLeft: '14px' }}>
+                          {historyList.map((hist, idx) => (
+                            <div key={hist.hash} className="history-node" style={{ position: 'relative', paddingBottom: '24px' }}>
+                              <div style={{ 
+                                position: 'absolute', 
+                                left: '-18.5px', 
+                                top: '4px', 
+                                width: '8px', 
+                                height: '8px', 
+                                borderRadius: '50%', 
+                                background: idx === 0 ? '#10b981' : 'var(--text-weak)',
+                                border: '2px solid var(--bg-main)',
+                                zIndex: 2
+                              }} />
+                              
+                              <div style={{ fontSize: '12px', fontWeight: 'bold', color: 'var(--text-active)', marginBottom: '4px' }}>
+                                {hist.message}
+                              </div>
+                              <div style={{ fontSize: '10px', color: 'var(--text-muted)', marginBottom: '10px' }} className="tabular-nums">
+                                Commit: {hist.hash} <br />
+                                {new Date(hist.date).toLocaleString()}
+                              </div>
+                              
+                              <div style={{ display: 'flex', gap: '8px' }}>
+                                <button 
+                                  type="button"
+                                  className="btn btn-secondary btn-sm" 
+                                  style={{ fontSize: '11px', padding: '3px 8px' }}
+                                  onClick={() => previewHistoryVersion(hist.hash)}
+                                >
+                                  对比
+                                </button>
+                                <button 
+                                  type="button"
+                                  className="btn btn-secondary btn-sm" 
+                                  style={{ fontSize: '11px', padding: '3px 8px', borderColor: '#ef4444', color: '#ef4444' }}
+                                  onClick={() => { setRollbackCommitHash(hist.hash); setIsRollbackConfirmOpen(true); }}
+                                >
+                                  回退
+                                </button>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
           </div>
@@ -2135,6 +2462,121 @@ export default function App() {
                 <button className="btn btn-danger" style={{ flex: 1, justifyContent: 'center', background: 'rgba(239, 68, 68, 0.08)', color: '#ef4444', borderColor: 'rgba(239, 68, 68, 0.2)' }} onClick={() => { setIsUnsavedConfirmOpen(false); setIsEditOpen(false); }}>放弃修改退出</button>
               </div>
               <button className="btn btn-primary" style={{ width: '100%', justifyContent: 'center' }} onClick={() => handleSaveSkill()}>保存修改并退出</button>
+            </div>
+          </div>
+        </div>
+      )}
+      {/* 8. 历史版本对比预览弹窗 (Version Comparison Modal) */}
+      {selectedHistoryCommit && historySkillDetail && viewedSkill && (
+        <div className="modal-overlay" onClick={() => { setSelectedHistoryCommit(null); setHistorySkillDetail(null); }}>
+          <div className="modal-content modal-immersive" style={{ maxWidth: '90vw', width: '90vw', height: '85vh' }} onClick={(e) => e.stopPropagation()}>
+            <div className="modal-header">
+              <h3 className="modal-title">⏳ 历史版本对比预览 ({selectedHistoryCommit})</h3>
+              <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
+                <button 
+                  className="btn btn-primary"
+                  style={{ borderColor: '#ef4444', color: '#ef4444', background: 'rgba(239, 68, 68, 0.05)' }}
+                  onClick={() => { setRollbackCommitHash(selectedHistoryCommit); setIsRollbackConfirmOpen(true); }}
+                >
+                  回退到此版本
+                </button>
+                <button className="modal-close-btn" style={{ display: 'flex', alignItems: 'center' }} onClick={() => { setSelectedHistoryCommit(null); setHistorySkillDetail(null); }}><CloseIcon /></button>
+              </div>
+            </div>
+            
+            <div className="modal-body" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '24px', height: 'calc(100% - 70px)', overflow: 'hidden', padding: '24px' }}>
+              {/* 左侧：历史版本 */}
+              <div style={{ borderRight: '1px solid var(--border-color)', paddingRight: '20px', display: 'flex', flexDirection: 'column', height: '100%' }}>
+                <div style={{ paddingBottom: '12px', borderBottom: '1px solid var(--border-color)', marginBottom: '16px' }}>
+                  <h4 style={{ margin: 0, color: '#ef4444' }}>⏳ 历史快照版本 ({selectedHistoryCommit})</h4>
+                </div>
+                <div style={{ flex: 1, overflowY: 'auto' }}>
+                  <h1>{historySkillDetail.title}</h1>
+                  <div style={{ display: 'flex', gap: '6px', margin: '12px 0' }}>
+                    <span className="card-category" style={{ padding: '4px 10px', fontSize: '12px' }}>{historySkillDetail.category}</span>
+                    {historySkillDetail.tags.map(t => <span key={t} className="viewer-tag">#{t}</span>)}
+                  </div>
+                  {historySkillDetail.description && (
+                    <p style={{ fontStyle: 'italic', color: 'var(--text-muted)', fontSize: '13px', borderLeft: '3px solid var(--border-color)', paddingLeft: '12px' }}>
+                      {historySkillDetail.description}
+                    </p>
+                  )}
+                  <div className="markdown-body" style={{ marginTop: '20px' }} dangerouslySetInnerHTML={{ __html: marked(historySkillDetail.content) }}></div>
+                </div>
+              </div>
+              
+              {/* 右侧：当前版本 */}
+              <div style={{ paddingLeft: '4px', display: 'flex', flexDirection: 'column', height: '100%' }}>
+                <div style={{ paddingBottom: '12px', borderBottom: '1px solid var(--border-color)', marginBottom: '16px' }}>
+                  <h4 style={{ margin: 0, color: '#10b981' }}>🟢 当前最新版本</h4>
+                </div>
+                <div style={{ flex: 1, overflowY: 'auto' }}>
+                  <h1>{viewedSkill.title}</h1>
+                  <div style={{ display: 'flex', gap: '6px', margin: '12px 0' }}>
+                    <span className="card-category" style={{ padding: '4px 10px', fontSize: '12px' }}>{viewedSkill.category}</span>
+                    {viewedSkill.tags.map(t => <span key={t} className="viewer-tag">#{t}</span>)}
+                  </div>
+                  {viewedSkill.description && (
+                    <p style={{ fontStyle: 'italic', color: 'var(--text-muted)', fontSize: '13px', borderLeft: '3px solid var(--border-color)', paddingLeft: '12px' }}>
+                      {viewedSkill.description}
+                    </p>
+                  )}
+                  <div className="markdown-body" style={{ marginTop: '20px' }} dangerouslySetInnerHTML={{ __html: marked(viewedSkill.content) }}></div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 9. Git 时光机回退确认弹窗 */}
+      {isRollbackConfirmOpen && rollbackCommitHash && (
+        <div className="modal-overlay" onClick={() => setIsRollbackConfirmOpen(false)}>
+          <div className="modal-content modal-standard modal-confirm-warning" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-header header-warning">
+              <h3 className="modal-title">⏳ 时光机回退确认</h3>
+              <button className="modal-close-btn" style={{ display: 'flex', alignItems: 'center' }} onClick={() => setIsRollbackConfirmOpen(false)}><CloseIcon /></button>
+            </div>
+            <div className="modal-body text-center">
+              <div className="warning-icon-box">⏳</div>
+              <h4 className="warning-item-title">确定要将此技能包回退到版本 "{rollbackCommitHash}" 吗？</h4>
+              <p className="warning-text">
+                回退将用历史版本覆盖本地当前文件。系统会在 Git 中自动保留本次回滚记录，以便您再次反悔。
+              </p>
+            </div>
+            <div className="modal-footer footer-warning">
+              <button className="btn btn-secondary" onClick={() => setIsRollbackConfirmOpen(false)}>取消</button>
+              <button className="btn btn-primary" onClick={handleRollback}>
+                确认执行回滚
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 10. 恢复备份二次确认弹窗 */}
+      {isRestoreConfirmOpen && selectedRestoreBackup && (
+        <div className="modal-overlay" onClick={() => { setIsRestoreConfirmOpen(false); setSelectedRestoreBackup(null); }}>
+          <div className="modal-content modal-standard modal-confirm-warning" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-header header-warning">
+              <h3 className="modal-title text-danger">🚨 恢复工作区确认</h3>
+              <button className="modal-close-btn" style={{ display: 'flex', alignItems: 'center' }} onClick={() => { setIsRestoreConfirmOpen(false); setSelectedRestoreBackup(null); }}><CloseIcon /></button>
+            </div>
+            <div className="modal-body text-center">
+              <div className="warning-icon-box danger-animate">🚨</div>
+              <h4 className="warning-item-title">确定要从备份 "{selectedRestoreBackup}" 恢复吗？</h4>
+              <p className="warning-text" style={{ color: '#ef4444', fontWeight: 'bold' }}>
+                此操作将完全擦除当前工作区（除 .git、.trash、backups 外）所有的 Markdown 文件，并替换为备份中的内容！
+              </p>
+              <p className="warning-text" style={{ fontSize: '11px', marginTop: '8px' }}>
+                * 为了数据安全，系统在恢复前会自动为您当前的最新状态创建一个紧急自动备份 (emergency-auto-backup.zip)。
+              </p>
+            </div>
+            <div className="modal-footer footer-warning">
+              <button className="btn btn-secondary" onClick={() => { setIsRestoreConfirmOpen(false); setSelectedRestoreBackup(null); }}>取消</button>
+              <button className="btn btn-primary" style={{ background: '#ef4444', borderColor: '#ef4444' }} onClick={handleRestoreBackup}>
+                确认覆盖并恢复
+              </button>
             </div>
           </div>
         </div>

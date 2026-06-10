@@ -1699,6 +1699,68 @@ input:focus, select:focus, textarea:focus {
   border-color: var(--border-hover);
 }
 
+/* ==========================================================================
+   Git 版本时光机 & 安全备份样式
+   ========================================================================== */
+
+/* 1. 时光机时间轴样式 */
+.viewer-history {
+  transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+  animation: slideLeft 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes slideLeft {
+  from { transform: translateX(20px); opacity: 0; }
+  to { transform: translateX(0); opacity: 1; }
+}
+
+.history-timeline {
+  position: relative;
+}
+
+.history-node {
+  position: relative;
+  transition: all 0.2s ease;
+}
+
+.history-node:hover {
+  border-left-color: var(--text-main) !important;
+}
+
+/* 2. 备份列表卡片样式 */
+.backup-list-box {
+  scrollbar-width: thin;
+  scrollbar-color: var(--border-color) transparent;
+}
+
+.backup-list-box::-webkit-scrollbar {
+  width: 4px;
+}
+
+.backup-list-box::-webkit-scrollbar-thumb {
+  background: var(--border-color);
+  border-radius: 2px;
+}
+
+.backup-item {
+  transition: background 0.15s ease;
+}
+
+.backup-item:hover {
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.dark-theme .backup-item:hover {
+  background: rgba(255, 255, 255, 0.02);
+}
+
+/* 按钮高亮和微调 */
+.btn-secondary.active {
+  background: var(--text-main);
+  color: var(--bg-main);
+  border-color: var(--text-main);
+}
+
 .editor-workspace-header .toolbar-btn svg {
   width: 12px;
   height: 12px;

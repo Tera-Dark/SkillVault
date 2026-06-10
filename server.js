@@ -102,6 +102,121 @@ function isForbiddenSystemPath(targetPath) {
   }
 }
 
+// ==========================================
+// Git 版本时光机核心辅助逻辑
+// ==========================================
+let isGitSupported = false;
+
+// 初始化 Git 仓储并在本地环境做鲁棒防护配置
+async function initGitRepo(skillsDir) {
+  try {
+    const isGit = await fs.pathExists(path.join(skillsDir, '.git'));
+    if (isGit) {
+      console.log(`[Git] 目录已是 Git 仓储: ${skillsDir}`);
+      return true;
+    }
+
+    console.log(`[Git] 正在初始化 Git 仓储于: ${skillsDir}`);
+    
+    // 执行 git init
+    await new Promise((resolve, reject) => {
+      const ps = spawn('git', ['init'], { cwd: skillsDir });
+      ps.on('close', (code) => code === 0 ? resolve() : reject(new Error(`git init exit code ${code}`)));
+    });
+
+    // 写入 .gitignore (排除 .trash 与 backups 目录，防止 Git 历史爆增及污染)
+    const gitignorePath = path.join(skillsDir, '.gitignore');
+    if (!(await fs.pathExists(gitignorePath))) {
+      await fs.writeFile(gitignorePath, ".trash/\nbackups/\n", 'utf-8');
+    }
+
+    // 为当前本地 Git 仓储进行局部 user.name 与 email 配置，防止由于全局未配置 Git 导致 Commit 失败
+    await new Promise((resolve) => {
+      spawn('git', ['config', '--local', 'user.name', 'SkillVault'], { cwd: skillsDir }).on('close', resolve);
+    });
+    await new Promise((resolve) => {
+      spawn('git', ['config', '--local', 'user.email', 'backup@skillvault.local'], { cwd: skillsDir }).on('close', resolve);
+    });
+
+    // 创建初始 Commit
+    await new Promise((resolve) => {
+      const ps = spawn('git', ['add', '.gitignore'], { cwd: skillsDir });
+      ps.on('close', () => {
+        spawn('git', ['commit', '-m', 'Initial commit by SkillVault'], { cwd: skillsDir }).on('close', resolve);
+      });
+    });
+
+    console.log(`[Git] Git 仓储初始化成功！`);
+    return true;
+  } catch (error) {
+    console.warn(`[Git] 自动初始化 Git 失败 (可能系统未安装 git):`, error.message);
+    return false;
+  }
+}
+
+// 检查系统是否支持 Git 并触发初始化
+async function checkGitSupport(skillsDir) {
+  return new Promise((resolve) => {
+    const ps = spawn('git', ['--version']);
+    ps.on('error', () => {
+      isGitSupported = false;
+      console.warn('[Git] 系统未检测到 Git，版本时光机功能将降级停用。');
+      resolve(false);
+    });
+    ps.on('close', async (code) => {
+      if (code === 0) {
+        isGitSupported = true;
+        await initGitRepo(skillsDir);
+        resolve(true);
+      } else {
+        isGitSupported = false;
+        console.warn('[Git] 系统 Git 运行异常，版本时光机功能将降级停用。');
+        resolve(false);
+      }
+    });
+  });
+}
+
+// Git 写入队列，防止并发 git add / git commit 命令操作 index 冲突导致锁死
+let gitWriteQueue = Promise.resolve();
+
+function queueGitWrite(fn) {
+  return new Promise((resolve, reject) => {
+    gitWriteQueue = gitWriteQueue.then(async () => {
+      try {
+        const res = await fn();
+        resolve(res);
+      } catch (err) {
+        reject(err);
+      }
+    });
+  });
+}
+
+// 自动为文件变更发起增量提交 (已加入队列机制，防止 index.lock 锁冲突)
+async function commitFileChange(skillsDir, relativePath, message) {
+  if (!isGitSupported) return;
+  return queueGitWrite(async () => {
+    try {
+      const normalizedPath = relativePath.replace(/\\/g, '/');
+      
+      // 1. git add
+      await new Promise((resolve, reject) => {
+        const ps = spawn('git', ['add', normalizedPath], { cwd: skillsDir });
+        ps.on('close', (code) => code === 0 ? resolve() : reject(new Error(`git add failed: ${code}`)));
+      });
+
+      // 2. git commit (允许退出码 1，代表没有需要提交的变动)
+      await new Promise((resolve) => {
+        const ps = spawn('git', ['commit', '-m', message], { cwd: skillsDir });
+        ps.on('close', () => resolve());
+      });
+    } catch (error) {
+      console.warn(`[Git] 自动提交失败:`, error.message);
+    }
+  });
+}
+
 // API: 获取当前配置路径
 app.get('/api/config', async (req, res) => {
   console.log('>>> 收到 /api/config 请求');
@@ -139,6 +254,7 @@ app.post('/api/config', async (req, res) => {
     
     // 写入配置
     await fs.writeJson(CONFIG_FILE, { skillsDir: absolutePath }, { spaces: 2 });
+    checkGitSupport(absolutePath); // 重新进行 Git 检测与初始化
     console.log(`工作目录已切换至: ${absolutePath}`);
     res.json({ success: true, skillsDir: absolutePath });
   } catch (error) {
@@ -343,6 +459,11 @@ app.post('/api/skills', async (req, res) => {
     });
     
     await fs.writeFile(filePath, fileContent, 'utf-8');
+    
+    // 异步触发 Git 增量提交
+    const relativePath = cleanCategory === '未分类' ? filename : path.join(cleanCategory, filename);
+    await commitFileChange(skillsDir, relativePath, `create: ${cleanTitle}`);
+
     res.status(201).json({ success: true, filename, category: cleanCategory });
   } catch (error) {
     if (error.message && error.message.includes('安全校验拦截')) {
@@ -421,6 +542,17 @@ app.put('/api/skills/:oldCategory/:oldFilename', async (req, res) => {
     await fs.ensureDir(newTargetDir);
     await fs.writeFile(newFilePath, fileContent, 'utf-8');
     
+    // 异步触发 Git 增量提交
+    const oldRelativePath = oldCategory === '未分类' ? oldFilename : path.join(oldCategory, oldFilename);
+    const newRelativePath = newCategory === '未分类' ? newFilename : path.join(newCategory, newFilename);
+    
+    if (oldRelativePath !== newRelativePath) {
+      await commitFileChange(skillsDir, oldRelativePath, `remove (rename): ${oldFilename}`);
+      await commitFileChange(skillsDir, newRelativePath, `create (rename): ${newTitle}`);
+    } else {
+      await commitFileChange(skillsDir, newRelativePath, `update: ${newTitle}`);
+    }
+
     res.json({ success: true, filename: newFilename, category: newCategory });
   } catch (error) {
     if (error.message && error.message.includes('安全校验拦截')) {
@@ -454,6 +586,11 @@ app.post('/api/skills/:category/:filename/star', async (req, res) => {
 
     const newContent = matter.stringify(parsed.content, parsed.data);
     await fs.writeFile(filePath, newContent, 'utf-8');
+    
+    // 异步触发 Git 增量提交
+    const relativePath = category === '未分类' ? filename : path.join(category, filename);
+    const title = parsed.data.title || path.basename(filename, '.md');
+    await commitFileChange(skillsDir, relativePath, `${star ? 'star' : 'unstar'}: ${title}`);
 
     res.json({ success: true, star: !!star });
   } catch (error) {
@@ -492,6 +629,10 @@ app.delete('/api/skills/:category/:filename', async (req, res) => {
       
       // 移动物理文件
       await fs.move(filePath, targetPath);
+      
+      // 异步触发 Git 增量提交
+      const relativePath = category === '未分类' ? filename : path.join(category, filename);
+      await commitFileChange(skillsDir, relativePath, `delete: ${filename}`);
       
       // 如果原分类文件夹空了，清理原文件夹
       if (category !== '未分类') {
@@ -584,6 +725,10 @@ app.post('/api/trash/:category/:filename/restore', async (req, res) => {
     }
     
     await fs.move(trashFilePath, targetFilePath);
+    
+    // 异步触发 Git 增量提交
+    const relativePath = category === '未分类' ? filename : path.join(category, filename);
+    await commitFileChange(skillsDir, relativePath, `restore: ${filename}`);
     
     // 检查垃圾桶分类子目录是否空了，空了就清理
     const trashCatDir = path.join(skillsDir, '.trash', category);
@@ -697,6 +842,377 @@ app.delete('/api/trash/empty', async (req, res) => {
   }
 });
 
+// ==========================================
+// Git 版本时光机 & 安全备份映射 API
+// ==========================================
+
+// 1. 获取特定 Skill 的版本历史线
+app.get('/api/skills/:category/:filename/history', async (req, res) => {
+  const category = req.params.category;
+  const filename = req.params.filename;
+
+  try {
+    const skillsDir = await getSkillsDir();
+    const filePath = category === '未分类'
+      ? path.join(skillsDir, filename)
+      : path.join(skillsDir, category, filename);
+
+    ensureSafePath(skillsDir, filePath);
+
+    if (!isGitSupported) {
+      return res.json({ supported: false, history: [] });
+    }
+
+    const relativePath = category === '未分类' ? filename : path.join(category, filename);
+    const normalizedPath = relativePath.replace(/\\/g, '/');
+
+    // 运行 git log 获取提交历史
+    const gitLog = await new Promise((resolve) => {
+      let stdout = '';
+      const ps = spawn('git', [
+        'log',
+        '--follow',
+        '--pretty=format:%h|%ad|%s',
+        '--date=iso-strict',
+        '--',
+        normalizedPath
+      ], { cwd: skillsDir });
+      ps.stdout.on('data', (data) => stdout += data.toString());
+      ps.on('close', () => resolve(stdout.trim()));
+    });
+
+    if (!gitLog) {
+      return res.json({ supported: true, history: [] });
+    }
+
+    const list = gitLog.split('\n').map(line => {
+      const [hash, date, message] = line.split('|');
+      return { hash, date, message };
+    });
+
+    res.json({ supported: true, history: list });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// 2. 读取特定 Skill 在某个历史版本下的正文和元数据
+app.get('/api/skills/:category/:filename/history/:commitHash', async (req, res) => {
+  const category = req.params.category;
+  const filename = req.params.filename;
+  const commitHash = req.params.commitHash;
+
+  try {
+    const skillsDir = await getSkillsDir();
+    const filePath = category === '未分类'
+      ? path.join(skillsDir, filename)
+      : path.join(skillsDir, category, filename);
+
+    ensureSafePath(skillsDir, filePath);
+
+    if (!isGitSupported) {
+      return res.status(400).json({ error: '系统未启用 Git，无法读取历史版本' });
+    }
+
+    const relativePath = category === '未分类' ? filename : path.join(category, filename);
+    const normalizedPath = relativePath.replace(/\\/g, '/');
+
+    const fileContent = await new Promise((resolve, reject) => {
+      let stdout = '';
+      let stderr = '';
+      const ps = spawn('git', ['show', `${commitHash}:${normalizedPath}`], { cwd: skillsDir });
+      ps.stdout.on('data', (data) => stdout += data.toString());
+      ps.stderr.on('data', (data) => stderr += data.toString());
+      ps.on('close', (code) => {
+        if (code === 0) {
+          resolve(stdout);
+        } else {
+          reject(new Error(`读取历史版本失败: ${stderr.trim()}`));
+        }
+      });
+    });
+
+    let data = {};
+    let content = '';
+    try {
+      const parsed = matter(fileContent);
+      data = parsed.data || {};
+      content = parsed.content || '';
+    } catch (e) {
+      data = {
+        title: path.basename(filename, '.md'),
+        description: '⚠️ YAML Front Matter 解析失败，原内容已损坏',
+        tags: ['格式错误'],
+        star: false
+      };
+      content = fileContent;
+    }
+
+    res.json({
+      title: data.title || path.basename(filename, '.md'),
+      description: data.description || '',
+      tags: data.tags || [],
+      category,
+      filename,
+      content: content.trim(),
+      star: !!data.star
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// 3. 一键回滚文件至某个历史版本
+app.post('/api/skills/:category/:filename/history/:commitHash/rollback', async (req, res) => {
+  const category = req.params.category;
+  const filename = req.params.filename;
+  const commitHash = req.params.commitHash;
+
+  try {
+    const skillsDir = await getSkillsDir();
+    const filePath = category === '未分类'
+      ? path.join(skillsDir, filename)
+      : path.join(skillsDir, category, filename);
+
+    ensureSafePath(skillsDir, filePath);
+
+    if (!isGitSupported) {
+      return res.status(400).json({ error: '系统未启用 Git，无法执行回滚' });
+    }
+
+    const relativePath = category === '未分类' ? filename : path.join(category, filename);
+    const normalizedPath = relativePath.replace(/\\/g, '/');
+
+    // 运行 git checkout
+    await new Promise((resolve, reject) => {
+      let stderr = '';
+      const ps = spawn('git', ['checkout', commitHash, '--', normalizedPath], { cwd: skillsDir });
+      ps.stderr.on('data', (data) => stderr += data.toString());
+      ps.on('close', (code) => {
+        if (code === 0) resolve();
+        else reject(new Error(`Git checkout 失败: ${stderr.trim()}`));
+      });
+    });
+
+    // 提交回退记录
+    const content = await fs.readFile(filePath, 'utf-8');
+    let title = path.basename(filename, '.md');
+    try {
+      const parsed = matter(content);
+      title = parsed.data.title || title;
+    } catch (e) {}
+
+    await commitFileChange(skillsDir, relativePath, `rollback: ${title} to ${commitHash}`);
+
+    res.json({ success: true, title });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// 4. 获取备份列表
+app.get('/api/backups', async (req, res) => {
+  try {
+    const skillsDir = await getSkillsDir();
+    const backupsDir = path.join(skillsDir, 'backups');
+    
+    if (!(await fs.pathExists(backupsDir))) {
+      return res.json([]);
+    }
+
+    const files = await fs.readdir(backupsDir);
+    const list = [];
+    for (const file of files) {
+      if (file.endsWith('.zip')) {
+        const filePath = path.join(backupsDir, file);
+        const stats = await fs.stat(filePath);
+        list.push({
+          name: file,
+          size: stats.size,
+          createdAt: stats.birthtime
+        });
+      }
+    }
+
+    list.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+    res.json(list);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// 5. 创建全量备份 (导出)
+app.post('/api/backups/export', async (req, res) => {
+  try {
+    const skillsDir = await getSkillsDir();
+    const backupsDir = path.join(skillsDir, 'backups');
+    await fs.ensureDir(backupsDir);
+
+    const dateStr = new Date().toISOString().replace(/T/, '-').replace(/:/g, '').replace(/\..+/, '').replace(/-/g, '');
+    const backupName = `backup-${dateStr}.zip`;
+    const backupZipPath = path.join(backupsDir, backupName);
+
+    // 调用 PowerShell 压缩
+    const ps = spawn('powershell', [
+      '-NoProfile',
+      '-Command',
+      `
+      [Console]::InputEncoding = [System.Text.Encoding]::UTF8;
+      [Console]::OutputEncoding = [System.Text.Encoding]::UTF8;
+      $skillsDir = [Console]::In.ReadLine();
+      $backupZip = [Console]::In.ReadLine();
+      $items = Get-ChildItem -Path $skillsDir | Where-Object { $_.Name -ne '.git' -and $_.Name -ne '.trash' -and $_.Name -ne 'backups' };
+      if ($items) {
+        Compress-Archive -Path $items.FullName -DestinationPath $backupZip -Force;
+      }
+      `
+    ]);
+
+    let stderr = '';
+    ps.stderr.on('data', (data) => stderr += data.toString());
+
+    ps.on('close', async (code) => {
+      if (code !== 0) {
+        console.error(`PowerShell 备份失败 (退出码 ${code}): ${stderr.trim()}`);
+        return res.status(500).json({ error: `备份失败: ${stderr.trim()}` });
+      }
+      const stats = await fs.stat(backupZipPath);
+      res.json({
+        success: true,
+        backup: {
+          name: backupName,
+          size: stats.size,
+          createdAt: stats.birthtime
+        }
+      });
+    });
+
+    ps.stdin.write(skillsDir + '\n');
+    ps.stdin.write(backupZipPath + '\n');
+    ps.stdin.end();
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// 6. 恢复全量备份
+app.post('/api/backups/:backupName/restore', async (req, res) => {
+  const backupName = req.params.backupName;
+
+  try {
+    const skillsDir = await getSkillsDir();
+    const backupsDir = path.join(skillsDir, 'backups');
+    const backupZipPath = path.join(backupsDir, backupName);
+
+    ensureSafePath(skillsDir, backupZipPath);
+
+    if (!(await fs.pathExists(backupZipPath))) {
+      return res.status(404).json({ error: '备份文件不存在' });
+    }
+
+    // A. 强制为当前做一次紧急自动备份
+    const autoBackupName = `emergency-auto-backup.zip`;
+    const autoBackupPath = path.join(backupsDir, autoBackupName);
+
+    await new Promise((resolve) => {
+      const ps = spawn('powershell', [
+        '-NoProfile',
+        '-Command',
+        `
+        [Console]::InputEncoding = [System.Text.Encoding]::UTF8;
+        $skillsDir = [Console]::In.ReadLine();
+        $backupZip = [Console]::In.ReadLine();
+        $items = Get-ChildItem -Path $skillsDir | Where-Object { $_.Name -ne '.git' -and $_.Name -ne '.trash' -and $_.Name -ne 'backups' };
+        if ($items) {
+          Compress-Archive -Path $items.FullName -DestinationPath $backupZip -Force;
+        }
+        `
+      ]);
+      ps.stdin.write(skillsDir + '\n');
+      ps.stdin.write(autoBackupPath + '\n');
+      ps.stdin.end();
+      ps.on('close', () => resolve());
+    });
+
+    // B. 清理当前工作目录文件
+    const items = await fs.readdir(skillsDir);
+    for (const item of items) {
+      if (item !== '.git' && item !== '.trash' && item !== 'backups') {
+        await fs.remove(path.join(skillsDir, item));
+      }
+    }
+
+    // C. 解压
+    const restorePs = spawn('powershell', [
+      '-NoProfile',
+      '-Command',
+      `
+      [Console]::InputEncoding = [System.Text.Encoding]::UTF8;
+      $backupZip = [Console]::In.ReadLine();
+      $targetDir = [Console]::In.ReadLine();
+      Expand-Archive -Path $backupZip -DestinationPath $targetDir -Force;
+      `
+    ]);
+
+    let stderr = '';
+    restorePs.stderr.on('data', (data) => stderr += data.toString());
+
+    restorePs.on('close', async (code) => {
+      if (code !== 0) {
+        console.error(`PowerShell 恢复备份失败 (退出码 ${code}): ${stderr.trim()}`);
+        return res.status(500).json({ error: `恢复失败: ${stderr.trim()}` });
+      }
+
+      // 自动做 Git 提交
+      if (isGitSupported) {
+        setTimeout(async () => {
+          try {
+            spawn('git', ['add', '.'], { cwd: skillsDir }).on('close', () => {
+              spawn('git', ['commit', '-m', `restore: restore from backup ${backupName}`], { cwd: skillsDir });
+            });
+          } catch (e) {}
+        }, 500);
+      }
+
+      res.json({ success: true });
+    });
+
+    restorePs.stdin.write(backupZipPath + '\n');
+    restorePs.stdin.write(skillsDir + '\n');
+    restorePs.stdin.end();
+  } catch (error) {
+    if (error.message && error.message.includes('安全校验拦截')) {
+      return res.status(403).json({ error: error.message });
+    }
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// 7. 删除备份
+app.delete('/api/backups/:backupName', async (req, res) => {
+  const backupName = req.params.backupName;
+
+  try {
+    const skillsDir = await getSkillsDir();
+    const backupsDir = path.join(skillsDir, 'backups');
+    const backupZipPath = path.join(backupsDir, backupName);
+
+    ensureSafePath(skillsDir, backupZipPath);
+
+    if (await fs.pathExists(backupZipPath)) {
+      await fs.remove(backupZipPath);
+      res.json({ success: true });
+    } else {
+      res.status(404).json({ error: '备份文件不存在' });
+    }
+  } catch (error) {
+    if (error.message && error.message.includes('安全校验拦截')) {
+      return res.status(403).json({ error: error.message });
+    }
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // API: 下载 Skill md 文件
 app.get('/api/skills/:category/:filename/download', async (req, res) => {
   const category = req.params.category;
@@ -755,6 +1271,7 @@ const runBackend = () => {
   // 首先尝试绑定 0.0.0.0 以支持局域网访问
   const server = startServer('0.0.0.0', async () => {
     const localDir = await getSkillsDir();
+    checkGitSupport(localDir); // 异步触发 Git 仓储检测与初始化
     console.log(`==================================================`);
     console.log(`  SkillVault - 后端服务已启动成功 (共享模式)`);
     console.log(`==================================================`);
@@ -772,6 +1289,7 @@ const runBackend = () => {
     // 降级尝试绑定 127.0.0.1 本地回环地址
     startServer('127.0.0.1', async () => {
       const localDir = await getSkillsDir();
+      checkGitSupport(localDir); // 异步触发 Git 仓储检测与初始化
       console.log(`==================================================`);
       console.log(`  SkillVault - 后端服务已启动成功 (本地模式)`);
       console.log(`==================================================`);
