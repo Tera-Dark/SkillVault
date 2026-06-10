@@ -47,6 +47,16 @@ function sanitizeFilename(name) {
   return name.replace(/[\\/:*?"<>|]/g, '-').trim();
 }
 
+// 检查 targetPath 是否在 baseDir 内 (防止路径穿越)
+function ensureSafePath(baseDir, targetPath) {
+  const resolvedBase = path.resolve(baseDir);
+  const resolvedTarget = path.resolve(targetPath);
+  if (!resolvedTarget.startsWith(resolvedBase)) {
+    throw new Error('安全校验拦截：禁止跨越工作目录访问外部路径！');
+  }
+  return resolvedTarget;
+}
+
 // API: 获取当前配置路径
 app.get('/api/config', async (req, res) => {
   console.log('>>> 收到 /api/config 请求');
@@ -105,8 +115,20 @@ app.get('/api/skills', async (req, res) => {
           const stats = await fs.stat(filePath);
           const content = await fs.readFile(filePath, 'utf-8');
           
-          // 解析 Front Matter
-          const { data } = matter(content);
+          // 解析 Front Matter (带有容错防崩溃保护)
+          let data = {};
+          try {
+            const parsed = matter(content);
+            data = parsed.data || {};
+          } catch (e) {
+            console.warn(`[Warning] 解析 YAML 头部失败，已对该文件降级: ${filePath}`, e.message);
+            data = {
+              title: path.basename(file.name, '.md'),
+              description: `⚠️ YAML Front Matter 解析失败，请检查文件头部格式：${e.message}`,
+              tags: ['格式错误'],
+              star: false
+            };
+          }
           
           list.push({
             title: data.title || path.basename(file.name, '.md'),
@@ -128,7 +150,20 @@ app.get('/api/skills', async (req, res) => {
         const filePath = path.join(skillsDir, item.name);
         const stats = await fs.stat(filePath);
         const content = await fs.readFile(filePath, 'utf-8');
-        const { data } = matter(content);
+        
+        let data = {};
+        try {
+          const parsed = matter(content);
+          data = parsed.data || {};
+        } catch (e) {
+          console.warn(`[Warning] 解析 YAML 头部失败，已对该文件降级: ${filePath}`, e.message);
+          data = {
+            title: path.basename(item.name, '.md'),
+            description: `⚠️ YAML Front Matter 解析失败，请检查文件头部格式：${e.message}`,
+            tags: ['格式错误'],
+            star: false
+          };
+        }
         
         list.push({
           title: data.title || path.basename(item.name, '.md'),
@@ -155,7 +190,6 @@ app.get('/api/skills', async (req, res) => {
   }
 });
 
-// API: 获取具体 Skill 的详细内容
 app.get('/api/skills/:category/:filename', async (req, res) => {
   const category = decodeURIComponent(req.params.category);
   const filename = decodeURIComponent(req.params.filename);
@@ -166,12 +200,31 @@ app.get('/api/skills/:category/:filename', async (req, res) => {
       ? path.join(skillsDir, filename)
       : path.join(skillsDir, category, filename);
       
+    ensureSafePath(skillsDir, filePath);
+      
     if (!(await fs.pathExists(filePath))) {
       return res.status(404).json({ error: '文件不存在' });
     }
     
     const fileContent = await fs.readFile(filePath, 'utf-8');
-    const { data, content } = matter(fileContent);
+    
+    let data = {};
+    let content = '';
+    try {
+      const parsed = matter(fileContent);
+      data = parsed.data || {};
+      content = parsed.content || '';
+    } catch (e) {
+      console.warn(`[Warning] 读取详情时解析 YAML 失败: ${filePath}`, e.message);
+      data = {
+        title: path.basename(filename, '.md'),
+        description: `⚠️ YAML Front Matter 解析失败，请检查格式：${e.message}`,
+        tags: ['格式错误'],
+        star: false
+      };
+      // 降级：直接展示全文件源码
+      content = `⚠️ **YAML Front Matter 头部格式损坏，以下为文件原始源码：**\n\n\`\`\`markdown\n${fileContent}\n\`\`\``;
+    }
     
     res.json({
       title: data.title || path.basename(filename, '.md'),
@@ -183,6 +236,9 @@ app.get('/api/skills/:category/:filename', async (req, res) => {
       star: !!data.star
     });
   } catch (error) {
+    if (error.message && error.message.includes('安全校验拦截')) {
+      return res.status(403).json({ error: error.message });
+    }
     res.status(500).json({ error: error.message });
   }
 });
@@ -208,6 +264,8 @@ app.post('/api/skills', async (req, res) => {
     await fs.ensureDir(targetDir);
     const filePath = path.join(targetDir, filename);
     
+    ensureSafePath(skillsDir, filePath);
+    
     if (await fs.pathExists(filePath)) {
       return res.status(400).json({ error: '同名 Skill 已存在，请更换标题' });
     }
@@ -224,6 +282,9 @@ app.post('/api/skills', async (req, res) => {
     await fs.writeFile(filePath, fileContent, 'utf-8');
     res.status(201).json({ success: true, filename, category: cleanCategory });
   } catch (error) {
+    if (error.message && error.message.includes('安全校验拦截')) {
+      return res.status(403).json({ error: error.message });
+    }
     res.status(500).json({ error: error.message });
   }
 });
@@ -253,6 +314,9 @@ app.put('/api/skills/:oldCategory/:oldFilename', async (req, res) => {
       : path.join(skillsDir, newCategory);
       
     const newFilePath = path.join(newTargetDir, newFilename);
+    
+    ensureSafePath(skillsDir, oldFilePath);
+    ensureSafePath(skillsDir, newFilePath);
     
     if (!(await fs.pathExists(oldFilePath))) {
       return res.status(404).json({ error: '原文件不存在' });
@@ -289,6 +353,9 @@ app.put('/api/skills/:oldCategory/:oldFilename', async (req, res) => {
     
     res.json({ success: true, filename: newFilename, category: newCategory });
   } catch (error) {
+    if (error.message && error.message.includes('安全校验拦截')) {
+      return res.status(403).json({ error: error.message });
+    }
     res.status(500).json({ error: error.message });
   }
 });
@@ -305,6 +372,8 @@ app.post('/api/skills/:category/:filename/star', async (req, res) => {
       ? path.join(skillsDir, filename)
       : path.join(skillsDir, category, filename);
 
+    ensureSafePath(skillsDir, filePath);
+
     if (!(await fs.pathExists(filePath))) {
       return res.status(404).json({ error: '文件不存在' });
     }
@@ -318,6 +387,9 @@ app.post('/api/skills/:category/:filename/star', async (req, res) => {
 
     res.json({ success: true, star: !!star });
   } catch (error) {
+    if (error.message && error.message.includes('安全校验拦截')) {
+      return res.status(403).json({ error: error.message });
+    }
     res.status(500).json({ error: error.message });
   }
 });
@@ -333,11 +405,15 @@ app.delete('/api/skills/:category/:filename', async (req, res) => {
       ? path.join(skillsDir, filename)
       : path.join(skillsDir, category, filename);
       
+    ensureSafePath(skillsDir, filePath);
+      
     if (await fs.pathExists(filePath)) {
       // 确立垃圾桶内对应的分类子目录
       const trashDir = path.join(skillsDir, '.trash', category);
       await fs.ensureDir(trashDir);
       const targetPath = path.join(trashDir, filename);
+      
+      ensureSafePath(skillsDir, targetPath);
       
       // 如果垃圾桶里已存在同名，先删掉，防止移动失败
       if (await fs.pathExists(targetPath)) {
@@ -359,6 +435,9 @@ app.delete('/api/skills/:category/:filename', async (req, res) => {
       res.status(404).json({ error: '文件不存在' });
     }
   } catch (error) {
+    if (error.message && error.message.includes('安全校验拦截')) {
+      return res.status(403).json({ error: error.message });
+    }
     res.status(500).json({ error: error.message });
   }
 });
@@ -415,6 +494,8 @@ app.post('/api/trash/:category/:filename/restore', async (req, res) => {
     const skillsDir = await getSkillsDir();
     const trashFilePath = path.join(skillsDir, '.trash', category, filename);
     
+    ensureSafePath(skillsDir, trashFilePath);
+    
     if (!(await fs.pathExists(trashFilePath))) {
       return res.status(404).json({ error: '垃圾桶中未找到该文件' });
     }
@@ -425,6 +506,8 @@ app.post('/api/trash/:category/:filename/restore', async (req, res) => {
       
     await fs.ensureDir(targetDir);
     const targetFilePath = path.join(targetDir, filename);
+    
+    ensureSafePath(skillsDir, targetFilePath);
     
     if (await fs.pathExists(targetFilePath)) {
       return res.status(400).json({ error: '恢复失败，当前目录下已存在同名技能包' });
@@ -440,6 +523,9 @@ app.post('/api/trash/:category/:filename/restore', async (req, res) => {
     
     res.json({ success: true });
   } catch (error) {
+    if (error.message && error.message.includes('安全校验拦截')) {
+      return res.status(403).json({ error: error.message });
+    }
     res.status(500).json({ error: error.message });
   }
 });
@@ -448,8 +534,10 @@ app.post('/api/trash/:category/:filename/restore', async (req, res) => {
 function moveToWindowsRecycleBin(filePath) {
   return new Promise((resolve, reject) => {
     const absolutePath = path.resolve(filePath);
+    // 对路径中可能含有的单引号进行双单引号转义，防止 PowerShell 单引号字符串逃逸注入
+    const safePath = absolutePath.replace(/'/g, "''");
     // 使用 PowerShell Microsoft.VisualBasic.FileIO.FileSystem
-    const cmd = `powershell -NoProfile -Command "Add-Type -AssemblyName Microsoft.VisualBasic; [Microsoft.VisualBasic.FileIO.FileSystem]::DeleteFile('${absolutePath}', 'OnlyErrorDialogs', 'SendToRecycleBin')"`;
+    const cmd = `powershell -NoProfile -Command "Add-Type -AssemblyName Microsoft.VisualBasic; [Microsoft.VisualBasic.FileIO.FileSystem]::DeleteFile('${safePath}', 'OnlyErrorDialogs', 'SendToRecycleBin')"`;
     exec(cmd, (err, stdout, stderr) => {
       if (err) {
         console.error('PowerShell 移送系统回收站失败，退回彻底物理删除:', err);
@@ -470,6 +558,8 @@ app.delete('/api/trash/:category/:filename/permanent', async (req, res) => {
     const skillsDir = await getSkillsDir();
     const trashFilePath = path.join(skillsDir, '.trash', category, filename);
     
+    ensureSafePath(skillsDir, trashFilePath);
+    
     if (!(await fs.pathExists(trashFilePath))) {
       return res.status(404).json({ error: '文件不存在于垃圾桶中' });
     }
@@ -484,6 +574,9 @@ app.delete('/api/trash/:category/:filename/permanent', async (req, res) => {
     
     res.json({ success: true });
   } catch (error) {
+    if (error.message && error.message.includes('安全校验拦截')) {
+      return res.status(403).json({ error: error.message });
+    }
     res.status(500).json({ error: error.message });
   }
 });
@@ -531,12 +624,17 @@ app.get('/api/skills/:category/:filename/download', async (req, res) => {
       ? path.join(skillsDir, filename)
       : path.join(skillsDir, category, filename);
       
+    ensureSafePath(skillsDir, filePath);
+      
     if (await fs.pathExists(filePath)) {
       res.download(filePath, filename);
     } else {
       res.status(404).json({ error: '文件不存在' });
     }
   } catch (error) {
+    if (error.message && error.message.includes('安全校验拦截')) {
+      return res.status(403).json({ error: error.message });
+    }
     res.status(500).json({ error: error.message });
   }
 });
