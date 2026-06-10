@@ -2038,3 +2038,190 @@ input:focus, select:focus, textarea:focus {
     border-color: rgba(239, 68, 68, 0.8);
   }
 }
+
+/* ==========================================================================
+   查看方式：网格 / 列表视图切换及列表样式 (View Mode Toggle & List Styles)
+   ========================================================================== */
+
+/* 列表容器 */
+.lovart-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+/* 列表行项 */
+.lovart-list-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  padding: 14px 20px;
+  cursor: pointer;
+  transition: transform 0.2s cubic-bezier(0.16, 1, 0.3, 1),
+              background-color 0.2s cubic-bezier(0.16, 1, 0.3, 1),
+              border-color 0.2s cubic-bezier(0.16, 1, 0.3, 1),
+              box-shadow 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  gap: 24px;
+}
+
+.lovart-list-item:hover {
+  background: var(--bg-card-hover);
+  border-color: var(--border-hover);
+  transform: scale(1.002);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.01);
+}
+
+.lovart-list-item.in-trash {
+  opacity: 0.8;
+  border-style: dashed;
+}
+
+/* 列表项左侧信息区 */
+.lovart-list-left {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex-shrink: 0;
+  min-width: 280px;
+}
+
+/* 分类徽章 */
+.lovart-list-badge {
+  font-size: 9px;
+  text-transform: uppercase;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  background: var(--text-main);
+  color: var(--bg-main);
+  padding: 2px 8px;
+  border-radius: 4px;
+  white-space: nowrap;
+}
+
+/* 标题 */
+.lovart-list-title {
+  font-family: var(--font-body);
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text-main);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 180px;
+  transition: color 0.15s ease;
+}
+
+.lovart-list-item:hover .lovart-list-title {
+  text-decoration: underline;
+}
+
+/* 标签列 */
+.lovart-list-tags {
+  font-size: 11px;
+  color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 140px;
+}
+
+/* 列表项正文缩略描述 (中间自适应拉伸) */
+.lovart-list-desc {
+  flex-grow: 1;
+  font-size: 12px;
+  color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* 列表项右侧操作与日期区 */
+.lovart-list-right {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  flex-shrink: 0;
+}
+
+/* 修改时间 */
+.lovart-list-date {
+  font-size: 11px;
+  color: var(--text-weak);
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+/* 列表项操作图标容器 */
+.lovart-list-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  opacity: 0.2;
+  transition: opacity 0.15s ease;
+}
+
+.lovart-list-item:hover .lovart-list-actions {
+  opacity: 1;
+}
+
+/* 列表项收藏星标 */
+.lovart-list-star {
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  padding: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-weak);
+  transition: color 0.2s, transform 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.lovart-list-star:hover {
+  color: var(--text-main);
+  transform: scale(1.15);
+}
+
+.lovart-list-star.active {
+  color: #eab308; /* 金黄色 */
+}
+
+/* 新建列表项行框 */
+.lovart-new-list-item {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  border: 1px dashed var(--border-color);
+  background: transparent;
+  border-radius: 8px;
+  padding: 14px 20px;
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text-muted);
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.lovart-new-list-item:hover {
+  background: rgba(0,0,0,0.02);
+  border-color: var(--text-main);
+  color: var(--text-main);
+}
+
+.dark-theme .lovart-new-list-item:hover {
+  background: rgba(255,255,255,0.02);
+}
+
+/* 模式切换按钮样式 */
+.view-mode-toggle button:hover {
+  background: rgba(0, 0, 0, 0.1) !important;
+}
+
+.dark-theme .view-mode-toggle button:hover {
+  background: rgba(255, 255, 255, 0.1) !important;
+}
+

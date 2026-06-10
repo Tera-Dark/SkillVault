@@ -98,6 +98,14 @@ const RotateCcwIcon = ({ size = 16 }) => (
   <svg className="svg-icon" xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><polyline points="3 3 3 8 8 8"/></svg>
 );
 
+const GridIcon = ({ size = 16 }) => (
+  <svg className="svg-icon" xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
+);
+
+const ListIcon = ({ size = 16 }) => (
+  <svg className="svg-icon" xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>
+);
+
 // ==========================================================================
 // Environment-Aware Demo Mode (Vercel In-Memory DB Showcase)
 // ==========================================================================
@@ -403,6 +411,14 @@ export default function App() {
   const [isRollbackConfirmOpen, setIsRollbackConfirmOpen] = useState(false); // 回滚确认弹窗
   const [rollbackCommitHash, setRollbackCommitHash] = useState(''); // 待回退的 commit hash
   
+  const [viewMode, setViewMode] = useState(() => {
+    return localStorage.getItem('skillvault_view_mode') || 'grid'; // 'grid' 或 'list'
+  });
+
+  const handleSetViewMode = (mode) => {
+    setViewMode(mode);
+    localStorage.setItem('skillvault_view_mode', mode);
+  };
   
   // 用于截图的 Ref
   const shareCardRef = useRef(null);
@@ -1554,8 +1570,7 @@ export default function App() {
               {selectedTags.length > 0 && (
                 <button 
                   onClick={() => setSelectedTags([])}
-                  style={{ fontSize: '11px', color: 'var(--text-weak)', textDecoration: 'underline' }}
-                  aria-label="清除所有已选标签"
+                  style={{ fontSize: '11px', background: 'transparent', border: 'none', color: 'var(--text-weak)', cursor: 'pointer' }}
                 >
                   清除
                 </button>
@@ -1705,124 +1720,177 @@ export default function App() {
               </div>
             </div>
 
-            {/* 卡片网格 */}
-            <h2 className="grid-section-title">
-              {selectedCategory === 'trash' ? '垃圾桶项目 (双击恢复或彻底移入系统回收站)' : '最近项目'}
-            </h2>
-            <div className="lovart-grid">
-              {/* 新建项目卡片盒 (在垃圾桶下屏蔽) */}
-              {selectedCategory !== 'trash' && (
-                <div className="lovart-card-group">
-                  <div className="lovart-new-card-box" onClick={handleNewSkillClick}>
-                    <span className="lovart-new-icon" style={{ display: 'flex', alignItems: 'center' }}><PlusIcon size={24} /></span>
-                    <span className="lovart-new-text">新建项目</span>
-                  </div>
-                </div>
-              )}
+            {/* 布局标题与切换栏 */}
+            <div className="lovart-grid-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
+              <h2 className="grid-section-title" style={{ margin: 0 }}>
+                {selectedCategory === 'trash' ? '垃圾桶项目 (双击恢复或彻底移入系统回收站)' : '最近项目'}
+              </h2>
+              <div className="view-mode-toggle" style={{ display: 'flex', gap: '4px', background: 'rgba(0,0,0,0.05)', padding: '2px', borderRadius: '6px', border: '1px solid var(--border-color)' }}>
+                <button 
+                  type="button"
+                  className={`btn-toggle-view ${viewMode === 'grid' ? 'active' : ''}`}
+                  onClick={() => handleSetViewMode('grid')}
+                  title="网格视图"
+                  style={{ display: 'flex', alignItems: 'center', padding: '5px 8px', border: 'none', background: viewMode === 'grid' ? 'var(--text-main)' : 'transparent', color: viewMode === 'grid' ? 'var(--bg-main)' : 'var(--text-muted)', borderRadius: '4px', cursor: 'pointer', transition: 'all 0.15s ease' }}
+                >
+                  <GridIcon size={14} />
+                </button>
+                <button 
+                  type="button"
+                  className={`btn-toggle-view ${viewMode === 'list' ? 'active' : ''}`}
+                  onClick={() => handleSetViewMode('list')}
+                  title="列表视图"
+                  style={{ display: 'flex', alignItems: 'center', padding: '5px 8px', border: 'none', background: viewMode === 'list' ? 'var(--text-main)' : 'transparent', color: viewMode === 'list' ? 'var(--bg-main)' : 'var(--text-muted)', borderRadius: '4px', cursor: 'pointer', transition: 'all 0.15s ease' }}
+                >
+                  <ListIcon size={14} />
+                </button>
+              </div>
+            </div>
 
-              {/* 卡片列表 */}
-              {displaySkills.map(skill => {
-                const cleanContent = skill.description || (selectedCategory === 'trash'
-                  ? '此项目在垃圾桶中。请在卡片右下角点击恢复图标恢复后再阅读。'
-                  : '无项目描述。点击标题以进入沉浸式阅读，开始整理并完善此技能包。');
-                
-                return (
-                  <div key={`${skill.category}-${skill.filename}`} className="lovart-card-group">
-                    {/* 卡片实体 (大圆角无边框浅灰色块) */}
+            {viewMode === 'list' ? (
+              <div className="lovart-list">
+                {/* 新建项目列表行 (在垃圾桶下屏蔽) */}
+                {selectedCategory !== 'trash' && (
+                  <div className="lovart-new-list-item" onClick={handleNewSkillClick}>
+                    <PlusIcon size={16} />
+                    <span>新建技能卡片项目</span>
+                  </div>
+                )}
+
+                {/* 列表行项列表 */}
+                {displaySkills.map(skill => {
+                  const cleanContent = skill.description || (selectedCategory === 'trash'
+                    ? '此项目在垃圾桶中。'
+                    : '无项目描述。');
+                  
+                  return (
                     <div 
-                      className={`lovart-card-box ${selectedCategory === 'trash' ? 'in-trash' : ''}`} 
+                      key={`${skill.category}-${skill.filename}`} 
+                      className={`lovart-list-item ${selectedCategory === 'trash' ? 'in-trash' : ''}`}
                       onClick={() => {
                         if (selectedCategory === 'trash') {
-                          alert("此技能包当前在垃圾桶中。请点击卡片右下角恢复图标恢复后再开始阅读！");
+                          alert("此技能包当前在垃圾桶中。请点击恢复图标恢复后再开始阅读！");
                           return;
                         }
                         handleViewSkill(skill.category, skill.filename);
                       }}
                     >
-                      <span className="lovart-card-badge">{skill.category}</span>
+                      <div className="lovart-list-left">
+                        <span className="lovart-list-badge">{skill.category}</span>
+                        <span className="lovart-list-title" title={skill.title}>{skill.title}</span>
+                        <span className="lovart-list-tags" title={skill.tags.map(t => `#${t}`).join(' ')}>
+                          {skill.tags.map(t => `#${t}`).join(' ') || '#无标签'}
+                        </span>
+                      </div>
                       
-                      {/* 收藏按钮 (垃圾桶下屏蔽) */}
-                      {selectedCategory !== 'trash' && (
-                        <button 
-                          className={`lovart-card-star ${skill.star ? 'active' : ''}`}
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            toggleStar(skill.category, skill.filename, skill.star);
-                          }}
-                          title={skill.star ? "取消收藏" : "加入收藏"}
-                        >
-                          <StarIcon filled={skill.star} />
-                        </button>
-                      )}
-
-                      {/* 精美纯净内容缩略预览 */}
-                      <div className="lovart-card-preview">
+                      <div className="lovart-list-desc" title={cleanContent}>
                         {cleanContent}
                       </div>
 
-                      {/* 鼠标悬浮才浮现的操作栏 */}
-                      <div className="lovart-card-actions" onClick={(e) => e.stopPropagation()}>
-                        {selectedCategory === 'trash' ? (
-                          <>
+                      <div className="lovart-list-right">
+                        <span className="lovart-list-date">
+                          {selectedCategory === 'trash'
+                            ? `移入: ${new Date(skill.updatedAt).toLocaleDateString()}`
+                            : `修改: ${new Date(skill.updatedAt).toLocaleDateString()}`
+                          }
+                        </span>
+                        
+                        <div className="lovart-list-actions" onClick={(e) => e.stopPropagation()}>
+                          {/* 收藏按钮 (垃圾桶下屏蔽) */}
+                          {selectedCategory !== 'trash' && (
                             <button 
-                              onClick={() => handleRestoreSkill(skill.category, skill.filename)} 
-                              className="lovart-action-icon text-restore"
-                              title="恢复到原分类"
+                              className={`lovart-list-star ${skill.star ? 'active' : ''}`}
+                              onClick={() => toggleStar(skill.category, skill.filename, skill.star)}
+                              title={skill.star ? "取消收藏" : "加入收藏"}
+                              style={{ background: 'transparent', border: 'none', cursor: 'pointer', padding: '4px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
                             >
-                              <RotateCcwIcon />
+                              <StarIcon filled={skill.star} size={14} />
                             </button>
-                            <button 
-                              onClick={() => { setSelectedTrashSkill(skill); setIsDeleteConfirmOpen(true); }} 
-                              className="lovart-action-icon text-danger"
-                              title="彻底删除"
-                            >
-                              <TrashIcon />
-                            </button>
-                          </>
-                        ) : (
-                          <>
-                            <button 
-                              onClick={() => handleViewSkill(skill.category, skill.filename)} 
-                              className="lovart-action-icon"
-                              title="查看详情"
-                            >
-                              <EyeIcon />
-                            </button>
-                            <button 
-                              onClick={() => {
-                                fetch(`/api/skills/${encodeURIComponent(skill.category)}/${encodeURIComponent(skill.filename)}`)
-                                  .then(res => res.json())
-                                  .then(data => handleEditSkillClick(data));
-                              }} 
-                              className="lovart-action-icon"
-                              title="编辑"
-                            >
-                              <EditIcon />
-                            </button>
-                            <a 
-                              href={`/api/skills/${encodeURIComponent(skill.category)}/${encodeURIComponent(skill.filename)}/download`}
-                              className="lovart-action-icon"
-                              title="下载"
-                              download
-                            >
-                              <DownloadIcon />
-                            </a>
-                            <button 
-                              onClick={() => { setSelectedSoftDeleteSkill(skill); setIsSoftDeleteConfirmOpen(true); }} 
-                              className="lovart-action-icon"
-                              title="删除"
-                            >
-                              <TrashIcon />
-                            </button>
-                          </>
-                        )}
+                          )}
+
+                          {selectedCategory === 'trash' ? (
+                            <>
+                              <button 
+                                onClick={() => handleRestoreSkill(skill.category, skill.filename)} 
+                                className="lovart-action-icon text-restore"
+                                title="恢复到原分类"
+                              >
+                                <RotateCcwIcon size={14} />
+                              </button>
+                              <button 
+                                onClick={() => { setSelectedTrashSkill(skill); setIsDeleteConfirmOpen(true); }} 
+                                className="lovart-action-icon text-danger"
+                                title="彻底删除"
+                              >
+                                <TrashIcon size={14} />
+                              </button>
+                            </>
+                          ) : (
+                            <>
+                              <button 
+                                onClick={() => handleViewSkill(skill.category, skill.filename)} 
+                                className="lovart-action-icon"
+                                title="查看详情"
+                              >
+                                <EyeIcon size={14} />
+                              </button>
+                              <button 
+                                onClick={() => {
+                                  fetch(`/api/skills/${encodeURIComponent(skill.category)}/${encodeURIComponent(skill.filename)}`)
+                                    .then(res => res.json())
+                                    .then(data => handleEditSkillClick(data));
+                                }} 
+                                className="lovart-action-icon"
+                                title="编辑"
+                              >
+                                <EditIcon size={14} />
+                              </button>
+                              <a 
+                                href={`/api/skills/${encodeURIComponent(skill.category)}/${encodeURIComponent(skill.filename)}/download`}
+                                className="lovart-action-icon"
+                                title="下载"
+                                download
+                              >
+                                <DownloadIcon size={14} />
+                              </a>
+                              <button 
+                                onClick={() => { setSelectedSoftDeleteSkill(skill); setIsSoftDeleteConfirmOpen(true); }} 
+                                className="lovart-action-icon"
+                                title="删除"
+                              >
+                                <TrashIcon size={14} />
+                              </button>
+                            </>
+                          )}
+                        </div>
                       </div>
                     </div>
+                  );
+                })}
+              </div>
+            ) : (
+              <div className="lovart-grid">
+                {/* 新建项目卡片盒 (在垃圾桶下屏蔽) */}
+                {selectedCategory !== 'trash' && (
+                  <div className="lovart-card-group">
+                    <div className="lovart-new-card-box" onClick={handleNewSkillClick}>
+                      <span className="lovart-new-icon" style={{ display: 'flex', alignItems: 'center' }}><PlusIcon size={24} /></span>
+                      <span className="lovart-new-text">新建项目</span>
+                    </div>
+                  </div>
+                )}
 
-                    {/* 外置的标题与元数据 (画廊版式精髓) */}
-                    <div className="lovart-card-meta">
+                {/* 卡片列表 */}
+                {displaySkills.map(skill => {
+                  const cleanContent = skill.description || (selectedCategory === 'trash'
+                    ? '此项目在垃圾桶中。请在卡片右下角点击恢复图标恢复后再阅读。'
+                    : '无项目描述。点击标题以进入沉浸式阅读，开始整理并完善此技能包。');
+                  
+                  return (
+                    <div key={`${skill.category}-${skill.filename}`} className="lovart-card-group">
+                      {/* 卡片实体 (大圆角无边框浅灰色块) */}
                       <div 
-                        className="lovart-card-title"
+                        className={`lovart-card-box ${selectedCategory === 'trash' ? 'in-trash' : ''}`} 
                         onClick={() => {
                           if (selectedCategory === 'trash') {
                             alert("此技能包当前在垃圾桶中。请点击卡片右下角恢复图标恢复后再开始阅读！");
@@ -1831,28 +1899,121 @@ export default function App() {
                           handleViewSkill(skill.category, skill.filename);
                         }}
                       >
-                        {skill.title}
+                        <span className="lovart-card-badge">{skill.category}</span>
+                        
+                        {/* 收藏按钮 (垃圾桶下屏蔽) */}
+                        {selectedCategory !== 'trash' && (
+                          <button 
+                            className={`lovart-card-star ${skill.star ? 'active' : ''}`}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              toggleStar(skill.category, skill.filename, skill.star);
+                            }}
+                            title={skill.star ? "取消收藏" : "加入收藏"}
+                          >
+                            <StarIcon filled={skill.star} />
+                          </button>
+                        )}
+
+                        {/* 精美纯净内容缩略预览 */}
+                        <div className="lovart-card-preview">
+                          {cleanContent}
+                        </div>
+
+                        {/* 鼠标悬浮才浮现的操作栏 */}
+                        <div className="lovart-card-actions" onClick={(e) => e.stopPropagation()}>
+                          {selectedCategory === 'trash' ? (
+                            <>
+                              <button 
+                                onClick={() => handleRestoreSkill(skill.category, skill.filename)} 
+                                className="lovart-action-icon text-restore"
+                                title="恢复到原分类"
+                              >
+                                <RotateCcwIcon />
+                              </button>
+                              <button 
+                                onClick={() => { setSelectedTrashSkill(skill); setIsDeleteConfirmOpen(true); }} 
+                                className="lovart-action-icon text-danger"
+                                title="彻底删除"
+                              >
+                                <TrashIcon />
+                              </button>
+                            </>
+                          ) : (
+                            <>
+                              <button 
+                                onClick={() => handleViewSkill(skill.category, skill.filename)} 
+                                className="lovart-action-icon"
+                                title="查看详情"
+                              >
+                                <EyeIcon />
+                              </button>
+                              <button 
+                                onClick={() => {
+                                  fetch(`/api/skills/${encodeURIComponent(skill.category)}/${encodeURIComponent(skill.filename)}`)
+                                    .then(res => res.json())
+                                    .then(data => handleEditSkillClick(data));
+                                }} 
+                                className="lovart-action-icon"
+                                title="编辑"
+                              >
+                                <EditIcon />
+                              </button>
+                              <a 
+                                href={`/api/skills/${encodeURIComponent(skill.category)}/${encodeURIComponent(skill.filename)}/download`}
+                                className="lovart-action-icon"
+                                title="下载"
+                                download
+                              >
+                                <DownloadIcon />
+                              </a>
+                              <button 
+                                onClick={() => { setSelectedSoftDeleteSkill(skill); setIsSoftDeleteConfirmOpen(true); }} 
+                                className="lovart-action-icon"
+                                title="删除"
+                              >
+                                <TrashIcon />
+                              </button>
+                            </>
+                          )}
+                        </div>
                       </div>
-                      <div className="lovart-card-desc">
-                        {skill.tags.map(t => `#${t}`).join(' ') || '#无标签'}
-                      </div>
-                      <div className="lovart-card-date">
-                        {selectedCategory === 'trash'
-                          ? `移入垃圾桶于 ${new Date(skill.updatedAt).toLocaleDateString()}`
-                          : `修改于 ${new Date(skill.updatedAt).toLocaleDateString()}`
-                        }
+
+                      {/* 外置的标题与元数据 (画廊版式精髓) */}
+                      <div className="lovart-card-meta">
+                        <div 
+                          className="lovart-card-title"
+                          onClick={() => {
+                            if (selectedCategory === 'trash') {
+                              alert("此技能包当前在垃圾桶中。请点击卡片右下角恢复图标恢复后再开始阅读！");
+                              return;
+                            }
+                            handleViewSkill(skill.category, skill.filename);
+                          }}
+                        >
+                          {skill.title}
+                        </div>
+                        <div className="lovart-card-desc">
+                          {skill.tags.map(t => `#${t}`).join(' ') || '#无标签'}
+                        </div>
+                        <div className="lovart-card-date">
+                          {selectedCategory === 'trash'
+                            ? `移入垃圾桶于 ${new Date(skill.updatedAt).toLocaleDateString()}`
+                            : `修改于 ${new Date(skill.updatedAt).toLocaleDateString()}`
+                          }
+                        </div>
                       </div>
                     </div>
-                  </div>
-                );
-              })}
+                  );
+                })}
+              </div>
+            )}
 
-              {displaySkills.length === 0 && skills.length > 0 && (
-                <div className="empty-state" style={{ gridColumn: '1 / -1' }}>
-                  <p>没有找到符合当前过滤条件的 Skill 文件。</p>
-                </div>
-              )}
-            </div>
+            {displaySkills.length === 0 && skills.length > 0 && (
+              <div className="empty-state" style={{ gridColumn: '1 / -1' }}>
+                <p>没有找到符合当前过滤条件的 Skill 文件。</p>
+              </div>
+            )}
           </>
         )}
       </main>
