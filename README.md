@@ -164,3 +164,11 @@ star: true
 | **DELETE** | `/api/trash/:category/:filename/permanent`| 无 | `{ success }` | **物理删除**：通过 PowerShell 投递至系统回收站 |
 | **DELETE** | `/api/trash/empty` | 无 | `{ success }` | **一键清空**：批量通过 PowerShell 投递至系统回收站 |
 | **GET** | `/api/skills/:category/:filename/download` | 无 | 物理二进制流 | 下载原始 Markdown 文档 |
+| **GET** | `/api/skills/:category/:filename/history` | 无 | `{ supported: boolean, history: Array }` | 获取文件的 Git 版本历史线 |
+| **GET** | `/api/skills/:category/:filename/history/:commitHash` | 无 | `SkillFullDetails` | 读取历史版本文件快照 |
+| **POST** | `/api/skills/:category/:filename/history/:commitHash/rollback` | 无 | `{ success, title }` | 一键时光回滚到指定历史版本 |
+| **POST** | `/api/backups/export` | 无 | `{ success, backup: { name, size, createdAt } }` | 立即创建安全 ZIP 物理全量备份 |
+| **GET** | `/api/backups` | 无 | `Array<{ name, size, createdAt }>` | 列出所有本地已备份 ZIP 文件列表 |
+| **POST** | `/api/backups/:backupName/restore` | 无 | `{ success }` | 从指定备份恢复（前置强制自动紧急备份） |
+| **DELETE** | `/api/backups/:backupName` | 无 | `{ success }` | 物理彻底删除指定备份文件 |
+
