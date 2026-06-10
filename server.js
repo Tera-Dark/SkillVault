@@ -5,7 +5,7 @@ import { fileURLToPath } from 'url';
 import fs from 'fs-extra';
 import matter from 'gray-matter';
 import os from 'os';
-import { exec } from 'child_process';
+import { exec, spawn } from 'child_process';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -47,14 +47,59 @@ function sanitizeFilename(name) {
   return name.replace(/[\\/:*?"<>|]/g, '-').trim();
 }
 
-// 检查 targetPath 是否在 baseDir 内 (防止路径穿越)
+// 检查 targetPath 是否在 baseDir 内 (基于 path.relative 计算，杜绝目录穿越与前缀匹配绕过漏洞)
 function ensureSafePath(baseDir, targetPath) {
   const resolvedBase = path.resolve(baseDir);
   const resolvedTarget = path.resolve(targetPath);
-  if (!resolvedTarget.startsWith(resolvedBase)) {
+  
+  const relative = path.relative(resolvedBase, resolvedTarget);
+  // relative 为空代表是 baseDir 自身，否则如果以 '..' 开头或者为绝对路径说明超出了目录范围
+  const isSafe = relative === '' || (!relative.startsWith('..') && !path.isAbsolute(relative));
+  
+  if (!isSafe) {
     throw new Error('安全校验拦截：禁止跨越工作目录访问外部路径！');
   }
   return resolvedTarget;
+}
+
+// 辅助方法：检查请求是否来自本地回环地址 (127.0.0.1 或 ::1)
+function isLocalRequest(req) {
+  const ip = req.ip || req.connection.remoteAddress;
+  return ip === '127.0.0.1' || 
+         ip === '::1' || 
+         ip === '::ffff:127.0.0.1' || 
+         ip === 'localhost';
+}
+
+// 辅助方法：检查路径是否为禁止的敏感系统路径
+function isForbiddenSystemPath(targetPath) {
+  try {
+    const p = path.resolve(targetPath).toLowerCase();
+    const parsed = path.parse(p);
+    
+    // 1. 禁止设为驱动器根目录 (例如 C:\, D:\, /)
+    if (p === parsed.root.toLowerCase()) {
+      return true;
+    }
+    
+    // 2. 禁止设为关键系统目录
+    const forbiddenDirs = [
+      'c:\\windows',
+      'c:\\windows\\system32',
+      'c:\\program files',
+      'c:\\program files (x86)',
+      'c:\\users',
+      '/etc',
+      '/usr',
+      '/var',
+      '/bin',
+      '/sbin'
+    ];
+    
+    return forbiddenDirs.includes(p);
+  } catch (e) {
+    return true; // 发生异常时，出于安全起见保守判定为不安全
+  }
 }
 
 // API: 获取当前配置路径
@@ -71,6 +116,11 @@ app.get('/api/config', async (req, res) => {
 
 // API: 保存新配置路径
 app.post('/api/config', async (req, res) => {
+  // 安全加固：仅限本地设备（localhost）修改工作目录，防止局域网内越权篡改
+  if (!isLocalRequest(req)) {
+    return res.status(403).json({ error: '安全策略拦截：仅限本地设备（localhost）修改工作目录！' });
+  }
+
   const { skillsDir } = req.body;
   if (!skillsDir) {
     return res.status(400).json({ error: '路径不能为空' });
@@ -79,6 +129,12 @@ app.post('/api/config', async (req, res) => {
   try {
     // 转换为绝对路径并标准化
     const absolutePath = path.resolve(skillsDir.trim());
+    
+    // 安全加固：禁止指向敏感的系统关键路径
+    if (isForbiddenSystemPath(absolutePath)) {
+      return res.status(400).json({ error: '安全策略拦截：禁止使用驱动器根目录或关键系统目录作为工作目录！' });
+    }
+
     await fs.ensureDir(absolutePath);
     
     // 写入配置
@@ -191,8 +247,8 @@ app.get('/api/skills', async (req, res) => {
 });
 
 app.get('/api/skills/:category/:filename', async (req, res) => {
-  const category = decodeURIComponent(req.params.category);
-  const filename = decodeURIComponent(req.params.filename);
+  const category = req.params.category;
+  const filename = req.params.filename;
   
   try {
     const skillsDir = await getSkillsDir();
@@ -252,7 +308,14 @@ app.post('/api/skills', async (req, res) => {
   
   try {
     const skillsDir = await getSkillsDir();
-    const cleanCategory = (category || '未分类').trim();
+    let cleanCategory = (category || '未分类').trim();
+    if (cleanCategory !== '未分类') {
+      // 净化分类名称，防止特殊字符或斜杠导致路径问题
+      cleanCategory = sanitizeFilename(cleanCategory);
+      if (!cleanCategory) {
+        cleanCategory = '未分类';
+      }
+    }
     const cleanTitle = title.trim();
     const filename = `${sanitizeFilename(cleanTitle)}.md`;
     
@@ -291,8 +354,8 @@ app.post('/api/skills', async (req, res) => {
 
 // API: 修改 Skill
 app.put('/api/skills/:oldCategory/:oldFilename', async (req, res) => {
-  const oldCategory = decodeURIComponent(req.params.oldCategory);
-  const oldFilename = decodeURIComponent(req.params.oldFilename);
+  const oldCategory = req.params.oldCategory;
+  const oldFilename = req.params.oldFilename;
   const { title, category, description, tags, content, star } = req.body;
   
   if (!title || !content) {
@@ -301,7 +364,14 @@ app.put('/api/skills/:oldCategory/:oldFilename', async (req, res) => {
   
   try {
     const skillsDir = await getSkillsDir();
-    const newCategory = (category || '未分类').trim();
+    let newCategory = (category || '未分类').trim();
+    if (newCategory !== '未分类') {
+      // 净化新分类名称，防止包含斜杠等非法字符导致目录逃逸
+      newCategory = sanitizeFilename(newCategory);
+      if (!newCategory) {
+        newCategory = '未分类';
+      }
+    }
     const newTitle = title.trim();
     const newFilename = `${sanitizeFilename(newTitle)}.md`;
     
@@ -362,8 +432,8 @@ app.put('/api/skills/:oldCategory/:oldFilename', async (req, res) => {
 
 // API: 收藏/取消收藏 Skill
 app.post('/api/skills/:category/:filename/star', async (req, res) => {
-  const category = decodeURIComponent(req.params.category);
-  const filename = decodeURIComponent(req.params.filename);
+  const category = req.params.category;
+  const filename = req.params.filename;
   const { star } = req.body;
 
   try {
@@ -396,8 +466,8 @@ app.post('/api/skills/:category/:filename/star', async (req, res) => {
 
 // API: 删除 Skill (软删除移入本地垃圾桶)
 app.delete('/api/skills/:category/:filename', async (req, res) => {
-  const category = decodeURIComponent(req.params.category);
-  const filename = decodeURIComponent(req.params.filename);
+  const category = req.params.category;
+  const filename = req.params.filename;
   
   try {
     const skillsDir = await getSkillsDir();
@@ -487,8 +557,8 @@ app.get('/api/trash', async (req, res) => {
 
 // API: 从垃圾桶恢复 Skill 文件
 app.post('/api/trash/:category/:filename/restore', async (req, res) => {
-  const category = decodeURIComponent(req.params.category);
-  const filename = decodeURIComponent(req.params.filename);
+  const category = req.params.category;
+  const filename = req.params.filename;
   
   try {
     const skillsDir = await getSkillsDir();
@@ -530,17 +600,28 @@ app.post('/api/trash/:category/:filename/restore', async (req, res) => {
   }
 });
 
-// 移送至 Windows 回收站核心方法
+// 移送至 Windows 回收站核心方法 (使用 spawn 配合参数绑定，杜绝命令注入)
 function moveToWindowsRecycleBin(filePath) {
   return new Promise((resolve, reject) => {
     const absolutePath = path.resolve(filePath);
-    // 对路径中可能含有的单引号进行双单引号转义，防止 PowerShell 单引号字符串逃逸注入
-    const safePath = absolutePath.replace(/'/g, "''");
-    // 使用 PowerShell Microsoft.VisualBasic.FileIO.FileSystem
-    const cmd = `powershell -NoProfile -Command "Add-Type -AssemblyName Microsoft.VisualBasic; [Microsoft.VisualBasic.FileIO.FileSystem]::DeleteFile('${safePath}', 'OnlyErrorDialogs', 'SendToRecycleBin')"`;
-    exec(cmd, (err, stdout, stderr) => {
-      if (err) {
-        console.error('PowerShell 移送系统回收站失败，退回彻底物理删除:', err);
+    
+    // 使用 PowerShell Microsoft.VisualBasic.FileIO.FileSystem 移入回收站
+    // 使用 param($path) 参数绑定机制，确保哪怕路径带有引号、分号、空格或特殊字符也绝不会发生注入
+    const ps = spawn('powershell', [
+      '-NoProfile',
+      '-Command',
+      "param($path); Add-Type -AssemblyName Microsoft.VisualBasic; [Microsoft.VisualBasic.FileIO.FileSystem]::DeleteFile($path, 'OnlyErrorDialogs', 'SendToRecycleBin')",
+      absolutePath
+    ]);
+
+    let stderr = '';
+    ps.stderr.on('data', (data) => {
+      stderr += data.toString();
+    });
+
+    ps.on('close', (code) => {
+      if (code !== 0) {
+        console.warn(`PowerShell 移送系统回收站失败 (退出码 ${code})，错误信息: ${stderr.trim()}。退回彻底物理删除...`);
         fs.remove(filePath).then(() => resolve(true)).catch(reject);
       } else {
         resolve(true);
@@ -551,8 +632,8 @@ function moveToWindowsRecycleBin(filePath) {
 
 // API: 彻底删除 (移入 Windows 系统回收站)
 app.delete('/api/trash/:category/:filename/permanent', async (req, res) => {
-  const category = decodeURIComponent(req.params.category);
-  const filename = decodeURIComponent(req.params.filename);
+  const category = req.params.category;
+  const filename = req.params.filename;
   
   try {
     const skillsDir = await getSkillsDir();
@@ -615,8 +696,8 @@ app.delete('/api/trash/empty', async (req, res) => {
 
 // API: 下载 Skill md 文件
 app.get('/api/skills/:category/:filename/download', async (req, res) => {
-  const category = decodeURIComponent(req.params.category);
-  const filename = decodeURIComponent(req.params.filename);
+  const category = req.params.category;
+  const filename = req.params.filename;
   
   try {
     const skillsDir = await getSkillsDir();

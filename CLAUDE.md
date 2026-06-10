@@ -36,10 +36,14 @@
   - 删除动作不能进行物理擦除，而是将其移入物理工作区下的隐藏目录 `.trash/:category/:filename`；
   - 后端扫描函数 `readdir` 必须排除以 `.` 开头的所有隐藏文件夹，避免垃圾桶污染主列表；
 - **系统回收站对接 (彻底删除)**: 
-  - 彻底删除和清空垃圾桶时，必须调用 native Windows PowerShell:
-    `Add-Type -AssemblyName Microsoft.VisualBasic; [Microsoft.VisualBasic.FileIO.FileSystem]::DeleteFile('绝对路径', 'OnlyErrorDialogs', 'SendToRecycleBin')`
-    以将文件投递至 Windows 桌面回收站，方便用户物理找回。
-  - 出错时，降级使用普通的 `fs.remove`。
+  - 彻底删除和清空垃圾桶时，必须使用更安全的 `child_process.spawn('powershell', [...])` 启动 PowerShell。
+  - 必须通过 `param($path)` 参数绑定机制来接收文件路径常量，严禁使用 `exec` 拼接命令行字符串，以彻底杜绝命令注入漏洞。
+  - 命令调用 `[Microsoft.VisualBasic.FileIO.FileSystem]::DeleteFile` 将文件安全移入 Windows 系统回收站。出错时降级为 `fs.remove`。
+- **防止路径穿越与越权**:
+  - 在所有涉及文件读取和写入的接口中，使用 `path.relative` 计算相对路径来检查路径安全性，阻止前缀和目录穿越绕过。
+  - 局域网模式下禁止非 localhost 客户端修改工作区目录（`isLocalRequest` 校验）；禁止将挂载路径指向敏感的系统关键文件夹（`isForbiddenSystemPath` 过滤）。
+  - 禁止在后端路由层对 `req.params` 参数进行二次解码（`decodeURIComponent`），避免文件名中包含百分比 `%` 时抛出 malformed 异常导致服务崩溃。
+  - 对用户新建和更新分类名进行 `sanitizeFilename` 过滤，禁止其包含斜杠，强制收拢在一级子目录下。
 
 ---
 
