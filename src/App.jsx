@@ -381,6 +381,7 @@ export default function App() {
   
   // 用于查看弹窗的临时详细数据
   const [viewedSkill, setViewedSkill] = useState(null);
+  const [activeTocHeader, setActiveTocHeader] = useState('');
   const [isShareMenuOpen, setIsShareMenuOpen] = useState(false);
   
   // 临时设置路径
@@ -858,6 +859,14 @@ export default function App() {
       setViewedSkill(data);
       setIsViewOpen(true);
       setIsShareMenuOpen(false);
+
+      // 初始化第一个 TOC 标题的高亮
+      const toc = generateToc(data.content);
+      if (toc.length > 0) {
+        setActiveTocHeader(toc[0].text);
+      } else {
+        setActiveTocHeader('');
+      }
     } catch (err) {
       alert(err.message);
     }
@@ -1038,7 +1047,7 @@ export default function App() {
     
     // 动态添加 loading 提示以增强交互感
     const originalText = document.getElementById('share-btn-text');
-    if (originalText) originalText.innerText = '生成中...';
+    if (originalText) originalText.innerText = '生成中…';
 
     html2canvas(shareCardRef.current, {
       backgroundColor: '#ffffff',
@@ -1100,9 +1109,45 @@ export default function App() {
     const headers = viewerScroll.querySelectorAll('h1, h2, h3');
     for (const header of headers) {
       if (header.textContent.trim() === text) {
+        setActiveTocHeader(text);
         header.scrollIntoView({ behavior: 'smooth', block: 'start' });
         break;
       }
+    }
+  };
+
+  // 监听沉浸式阅读器正文滚动以高亮 TOC 大纲
+  const handleViewerScroll = (e) => {
+    const scrollContainer = e.target;
+    if (!scrollContainer) return;
+
+    const headers = scrollContainer.querySelectorAll('h1, h2, h3');
+    if (headers.length === 0) return;
+
+    const containerTop = scrollContainer.getBoundingClientRect().top;
+    let currentActive = '';
+    let minDistance = Infinity;
+
+    headers.forEach((header) => {
+      const rect = header.getBoundingClientRect();
+      const relativeTop = rect.top - containerTop;
+
+      // 寻找最靠近当前滚动容器顶部 30px 内的标题作为 active 项
+      if (relativeTop <= 30) {
+        const dist = Math.abs(relativeTop - 10);
+        if (dist < minDistance) {
+          minDistance = dist;
+          currentActive = header.textContent.trim();
+        }
+      }
+    });
+
+    if (!currentActive && headers.length > 0) {
+      currentActive = headers[0].textContent.trim();
+    }
+
+    if (currentActive && currentActive !== activeTocHeader) {
+      setActiveTocHeader(currentActive);
     }
   };
 
@@ -1221,6 +1266,8 @@ export default function App() {
               setSearchQuery(''); 
             }}
             title="重置全部筛选"
+            role="button"
+            aria-label="重置全部筛选并回到主页"
           >
             SV
           </div>
@@ -1234,6 +1281,8 @@ export default function App() {
                 setSearchQuery('');
               }}
               data-tooltip="主页"
+              role="button"
+              aria-label="主页列表"
             >
               <HomeIcon />
             </div>
@@ -1241,6 +1290,8 @@ export default function App() {
               className={`sidebar-item ${isFilterPanelOpen ? 'active' : ''}`}
               onClick={() => setIsFilterPanelOpen(!isFilterPanelOpen)}
               data-tooltip={isFilterPanelOpen ? "收起筛选栏" : "展开筛选栏"}
+              role="button"
+              aria-label={isFilterPanelOpen ? "收起筛选栏" : "展开筛选栏"}
             >
               <TagIcon />
             </div>
@@ -1248,6 +1299,8 @@ export default function App() {
               className="sidebar-item"
               onClick={handleNewSkillClick}
               data-tooltip="新建技能"
+              role="button"
+              aria-label="新建技能卡片"
             >
               <PlusIcon />
             </div>
@@ -1255,6 +1308,8 @@ export default function App() {
               className="sidebar-item"
               onClick={() => { setIsSettingsOpen(true); fetchConfig(); }}
               data-tooltip="工作路径"
+              role="button"
+              aria-label="配置本地工作路径与局域网共享"
             >
               <SettingsIcon />
             </div>
@@ -1266,6 +1321,8 @@ export default function App() {
             className="sidebar-item"
             onClick={toggleTheme}
             data-tooltip={theme === 'light' ? "深色模式" : "浅色模式"}
+            role="button"
+            aria-label={theme === 'light' ? "切换到深色模式" : "切换到浅色模式"}
           >
             {theme === 'light' ? <MoonIcon /> : <SunIcon />}
           </div>
@@ -1274,6 +1331,8 @@ export default function App() {
             className="sidebar-item"
             onClick={() => alert('SkillVault - 私人技能管理平台\n双击 run.bat 运行，支持热重载和路径热切换。')}
             data-tooltip="关于说明"
+            role="button"
+            aria-label="关于系统说明"
           >
             <HelpIcon />
           </div>
@@ -1291,15 +1350,15 @@ export default function App() {
                 onClick={() => setSelectedCategory('全部')}
               >
                 <span className="filter-item-name">全部技能</span>
-                <span className="filter-item-count">{skills.length}</span>
+                <span className="filter-item-count tabular-nums">{skills.length}</span>
               </li>
               <li 
                 className={`filter-item ${selectedCategory === 'starred' ? 'active' : ''}`}
                 onClick={() => setSelectedCategory('starred')}
-                style={{ borderBottom: '1px dashed var(--border-color)', paddingBottom: '10px', marginBottom: '6px' }}
+                style={{ borderBottom: '1px solid var(--border-color)', paddingBottom: '10px', marginBottom: '6px' }}
               >
                 <span className="filter-item-name">⭐ 我的收藏</span>
-                <span className="filter-item-count">{skills.filter(s => s.star).length}</span>
+                <span className="filter-item-count tabular-nums">{skills.filter(s => s.star).length}</span>
               </li>
               {Object.entries(categoriesCount).map(([name, count]) => (
                 <li 
@@ -1308,7 +1367,7 @@ export default function App() {
                   onClick={() => setSelectedCategory(name)}
                 >
                   <span className="filter-item-name">{name}</span>
-                  <span className="filter-item-count">{count}</span>
+                  <span className="filter-item-count tabular-nums">{count}</span>
                 </li>
               ))}
               <li 
@@ -1317,7 +1376,7 @@ export default function App() {
                 style={{ borderTop: '1px solid var(--border-color)', marginTop: '8px', paddingTop: '10px' }}
               >
                 <span className="filter-item-name">🗑️ 垃圾桶</span>
-                <span className="filter-item-count">{trashSkills.length}</span>
+                <span className="filter-item-count tabular-nums">{trashSkills.length}</span>
               </li>
             </ul>
           </div>
@@ -1329,6 +1388,7 @@ export default function App() {
                 <button 
                   onClick={() => setSelectedTags([])}
                   style={{ fontSize: '11px', color: 'var(--text-weak)', textDecoration: 'underline' }}
+                  aria-label="清除所有已选标签"
                 >
                   清除
                 </button>
@@ -1350,7 +1410,7 @@ export default function App() {
                     }}
                     className={`tag-pill-sidebar ${isSelected ? 'active' : ''}`}
                   >
-                    #{name} <span className="tag-count-tiny">{count}</span>
+                    #{name} <span className="tag-count-tiny tabular-nums">{count}</span>
                   </span>
                 );
               })}
@@ -1388,21 +1448,23 @@ export default function App() {
               <span className="lovart-search-icon"><SearchIcon /></span>
               <input 
                 type="text" 
-                placeholder="查找技能、标签或描述..." 
+                placeholder="查找技能、标签或描述…" 
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 className="lovart-search-input"
+                spellCheck={false}
               />
               <div className="lovart-search-actions">
                 {searchQuery && (
                   <button 
                     onClick={() => setSearchQuery('')}
                     style={{ color: 'var(--text-weak)', fontSize: '13px', padding: '0 8px', display: 'flex', alignItems: 'center' }}
+                    aria-label="清除搜索词"
                   >
                     <CloseIcon size={12} />
                   </button>
                 )}
-                <button className="lovart-search-btn">
+                <button className="lovart-search-btn" aria-label="执行搜索">
                   <ArrowUpIcon />
                 </button>
               </div>
@@ -1413,6 +1475,7 @@ export default function App() {
               className="sort-select-lovart"
               value={sortKey}
               onChange={(e) => setSortKey(e.target.value)}
+              aria-label="选择卡片排序规则"
             >
               <option value="updatedAt-desc">最近修改优先</option>
               <option value="updatedAt-asc">最早修改优先</option>
@@ -1425,7 +1488,7 @@ export default function App() {
         {loading ? (
           <div className="loading-wrapper">
             <div className="spinner"></div>
-            <p>正在努力扫描并加载本地 Skill 文件...</p>
+            <p>正在努力扫描并加载本地 Skill 文件…</p>
           </div>
         ) : error ? (
           <div className="empty-state">
@@ -1702,6 +1765,7 @@ export default function App() {
                       placeholder="输入技能标题 (作为文件名)"
                       className="form-control-full"
                       required
+                      spellCheck={false}
                     />
                   </div>
 
@@ -1714,6 +1778,7 @@ export default function App() {
                       placeholder="例如: 前端、Python、未分类"
                       className="form-control-full"
                       list="categories-datalist"
+                      spellCheck={false}
                     />
                     <datalist id="categories-datalist">
                       {Object.keys(categoriesCount).map(c => <option key={c} value={c} />)}
@@ -1728,6 +1793,7 @@ export default function App() {
                       onChange={(e) => setCurrentSkill({...currentSkill, tags: e.target.value})}
                       placeholder="标签1, 标签2"
                       className="form-control-full"
+                      spellCheck={false}
                     />
                   </div>
 
@@ -1739,6 +1805,7 @@ export default function App() {
                       placeholder="极简描述该技能包，方便在卡片列表中预览"
                       className="form-control-full editor-sidebar-desc"
                       rows={4}
+                      spellCheck={false}
                     />
                   </div>
                 </div>
@@ -1771,7 +1838,7 @@ export default function App() {
                     {!currentSkill.isNew && saveStatus === 'saving' && (
                       <span className="auto-save-indicator saving">
                         <span className="indicator-dot saving-dot"></span>
-                        正在无感保存...
+                        正在无感保存…
                       </span>
                     )}
                     {currentSkill.isNew && (
@@ -1809,7 +1876,8 @@ export default function App() {
                       className="editor-textarea"
                       value={currentSkill.content}
                       onChange={(e) => setCurrentSkill({...currentSkill, content: e.target.value})}
-                      placeholder="# 请在此输入 Markdown 格式内容..."
+                      placeholder="# 请在此输入 Markdown 格式内容…"
+                      spellCheck={false}
                     />
                   </div>
                   
@@ -1905,7 +1973,7 @@ export default function App() {
                         <li 
                           key={idx} 
                           onClick={() => handleTocClick(item.text)}
-                          className={`toc-item toc-h${item.level}`}
+                          className={`toc-item toc-h${item.level} ${activeTocHeader === item.text ? 'active' : ''}`}
                         >
                           {item.text}
                         </li>
@@ -1933,7 +2001,7 @@ export default function App() {
                     )}
                   </div>
                   
-                  <div className="viewer-scroll-area">
+                  <div className="viewer-scroll-area" onScroll={handleViewerScroll}>
                     <div className="markdown-body" dangerouslySetInnerHTML={{ __html: marked(viewedSkill.content) }}></div>
                     
                     {/* 关联技能推荐 */}
