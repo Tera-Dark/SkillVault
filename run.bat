@@ -1,46 +1,48 @@
 @echo off
-:: 设置中文编码，防止控制台乱码
+:: Force switch current workspace to script directory
+cd /d "%~dp0"
+:: Set active code page to UTF-8
 chcp 65001 >nul
-title SkillVault - 启动器
+title SkillVault - Launcher
 
 echo ==================================================
-echo        SkillVault - 一键启动器
+echo        SkillVault - Service Launcher
 echo ==================================================
 echo.
 
-:: 检查是否安装了 Node.js
+:: Check Node.js installation
 where node >nul 2>nul
 if %errorlevel% neq 0 (
-    echo [错误] 未在系统中检测到 Node.js，请先安装 Node.js!
-    echo 请访问 https://nodejs.org 下载并安装 LTS 版本。
+    echo [ERROR] Node.js is not installed!
+    echo Please install Node.js from https://nodejs.org
     echo.
     pause
     exit /b
 )
 
-:: 检查并自动安装项目依赖
-if not exist "node_modules\" (
-    echo [状态] 检测到首次运行，正在自动安装项目依赖依赖，请稍等...
+:: Check and auto install dependencies
+if not exist "node_modules" (
+    echo [STATUS] First run detected. Installing dependencies...
     call npm install
     if %errorlevel% neq 0 (
         echo.
-        echo [错误] 依赖安装失败，请检查网络连接或尝试手动运行 'npm install'。
+        echo [ERROR] Failed to install dependencies. Please run 'npm install' manually.
         echo.
         pause
         exit /b
-      )
-      echo [成功] 依赖安装完成！
-      echo.
+    )
+    echo [SUCCESS] Dependencies installed successfully!
+    echo.
 )
 
-echo [状态] 正在启动前后端服务...
-echo [提示] 启动成功后，浏览器会自动打开前端页面 (http://localhost:5173)。
-echo [提示] 如果想要结束运行，请直接关闭当前窗口，或者在窗口内按 Ctrl+C。
+echo [STATUS] Starting client and server services...
+echo [TIPS] Browser will automatically open: http://localhost:5173
+echo [TIPS] To stop services, close this window or press Ctrl+C.
 echo.
 echo ==================================================
 echo.
 
-:: 启动并发开发服务
+:: Start concurrent services
 call npm run dev
 
 pause

@@ -1,28 +1,38 @@
 ---
-version: alpha
-name: SkillVault Lovart Minimal
-description: 极简画廊黑白美学设计系统，外置排版与大圆角模块
+version: v2.0
+name: SkillVault SaaS Minimal
+description: 极简 SaaS 开发者友好设计系统，以实用、快捷、专业为核心，最大宽度 1280px，居中排版
 colors:
-  primary: "#18181b"          # 主文字与主按钮背景
-  secondary: "#71717a"        # 辅助次要字色
-  weak: "#a1a1aa"             # 弱文字与未激活图标色
-  neutral: "#ffffff"          # 纯白底色
-  card: "#f4f4f5"             # 卡片块灰色背景
-  card-hover: "#e4e4e7"       # 卡片悬浮色
-  border: "#e4e4e7"           # 边框与极细分割线
-  accent: "#ef4444"           # 强调危险色（如删除、清空）
+  primary: "#111827"          # 主要文字（接近纯黑）
+  secondary: "#6B7280"        # 辅助文字与次要说明字色
+  border: "#E5E7EB"           # 边框与极细分割线色
+  background: "#FAFAFA"       # 页面背景淡灰色
+  card: "#FFFFFF"             # 卡片实体纯白背景
+  accent: "#111111"           # 核心强调色与反色聚焦高亮
+  danger: "#EF4444"           # 红色警示警告色（如彻底删除）
 typography:
-  h1:
-    fontFamily: Outfit, Plus Jakarta Sans, sans-serif
-    fontSize: 20px
+  hero:
+    fontFamily: Inter, system-ui, sans-serif
+    fontSize: 64px
     fontWeight: 800
-    lineHeight: 1.2
-    letterSpacing: -0.5px
+    lineHeight: 1.15
+  section:
+    fontFamily: Inter, system-ui, sans-serif
+    fontSize: 32px
+    fontWeight: 700
+  card-title:
+    fontFamily: Inter, system-ui, sans-serif
+    fontSize: 18px
+    fontWeight: 700
   body:
-    fontFamily: Plus Jakarta Sans, -apple-system, sans-serif
+    fontFamily: Inter, system-ui, sans-serif
     fontSize: 14px
     fontWeight: 400
     lineHeight: 1.6
+  caption:
+    fontFamily: Inter, system-ui, sans-serif
+    fontSize: 12px
+    color: "#6B7280"
 rounded:
   sm: 4px
   md: 8px
@@ -31,72 +41,78 @@ rounded:
 components:
   card:
     backgroundColor: "{colors.card}"
+    borderColor: "{colors.border}"
     rounded: "{rounded.lg}"
     padding: 24px
-  button-primary:
-    backgroundColor: "{colors.primary}"
-    textColor: "{colors.neutral}"
+  button:
     rounded: "{rounded.md}"
-  button-danger:
-    backgroundColor: "{colors.neutral}"
-    textColor: "{colors.accent}"
-    rounded: "{rounded.md}"
+    fontSize: 14px
+    fontWeight: 600
 ---
 
 ## Overview
 
-SkillVault 秉持“Architectural Minimalism meets Gallery Aesthetics”的视觉理念。界面应当呈现出极具秩序感的黑白二色，类似于现代画廊展签或高端报刊。页面不采用繁复的装饰性投影或斑斓的渐变色，而是通过**大面积低饱和度灰色色块的物理堆叠**和**极具易读性的高对比排版**来唤起清澈、平静的交互体验。
+SkillVault 前端交互规范遵循以 **“高效、极简、开发者友好 (Developer-Friendly)”** 为导向的现代 SaaS 界面体系。本规范参考了 70% GitHub + 20% Linear + 10% Anthropic Console 的视觉和排版精髓，追求零冗余装饰、高密度信息浏览以及快捷动作响应，让用户能够用最短的时间完成技能检索、一键复制和下载使用。
 
-## Colors
+## Color System
 
-本设计系统基于纯黑、纯白和中性灰，配以极具克制的警示红：
+系统限制使用单色极简配色（Monochrome-focused），严禁引入彩虹渐变、霓虹色块、霓虹发光或高饱和度的装饰底色：
 
-- **Primary (#18181b)**: 极深墨黑，用于核心文字、H1/H2 标题、主按钮背景。
-- **Secondary (#71717a)**: 优雅中性灰，用于描述文本、次要信息。
-- **Weak (#a1a1aa)**: 浅灰，用于占位符、未激活的微小图标。
-- **Neutral (#ffffff)**: Limestone 纯白基底。
-- **Card (#f4f4f5)**: 浅灰扁平色块，在暗黑模式下热切换为石墨深灰，用于承载卡片物理形状。
-- **Accent (#ef4444)**: 醒目红色，仅作为终极危险确认、一键清空和删除时的警示色，不得泛滥使用。
+- **Background (#FAFAFA)**：纯净、温和的页面背景色，提供宽敞的空气感。
+- **Card (#FFFFFF)**：纯白卡片，通过 1px 极细边框 `#E5E7EB` 进行网格切分，在灰底上呈现极佳的几何边界。
+- **Primary Text (#111827)**：主要文本字色，保持高对比度和清爽的可读性。
+- **Secondary Text (#6B7280)**：用于辅助信息、更新时间、简介描述及副标题。
+- **Accent (#111111)**：核心操作高亮、输入框激活、Tab 状态及反色聚焦环。
+- **Danger (#EF4444)**：警示红色，仅用于彻底删除、清空垃圾桶或重置等危险确认交互，不得泛滥使用。
+
+*注：暗黑模式采用 GitHub Dark 标志性色调，背景 `#0B0F17`，卡片 `#161B22`，边框 `#30363D`，字色 `#F0F6FC`，辅助字色 `#8B949E`。*
 
 ## Typography
 
-排版是本界面的视觉骨架：
+字体的层级必须鲜明且富有冲击力：
 
-- **标题字体 (Outfit)**: 选用几何感极强的 Outfit 字体。在大标题和卡片外部标题上采用超重字重 (`800`) 和负字符间距 (`-0.5px`)，凸显力量感与结构感。
-- **正文字体 (Plus Jakarta Sans)**: 选用宽扁、易读性极佳的 Plus Jakarta Sans 字体。中文部分降级到系统默认的 `-apple-system` 族群，确保行高充足 (`1.6`)。
+- **大字号与留白**：巨幕大标题（64-80px Extra Bold）配合充足的留白，形成专业高档的视觉锚点。
+- **等宽数字与规范拼写**：在卡片使用次数、更新日期和列表行中应用 `font-variant-numeric: tabular-nums` 防止字符抖动。
+- **推荐字体**：优先加载 `Inter` 或者是系统原生的苹果/微软默认 UI 无衬线字体，保持专业、严谨。
 
 ## Layout
 
-布局采用严谨的双栏非对称网格：
+采用标准 SaaS 居中布局：
 
-- **左侧窄导航栏 (72px)**: 极简流线型控制塔，仅用极细分割线 (`1px`) 隔离。
-- **过滤器侧边栏 (240px)**: 常驻/可折叠的筛选区域。
-- **卡片网格**: 响应式栅格，卡片列宽限制为最小 `320px`，防止过度拉伸而失去画廊长宽比。
+- **最大宽度 1280px**：限制页面内容主体区域最大宽度为 1280px，两侧留白，实现完美的阅读和操作流。
+- **无两栏侧栏**：取消 Lovart 固有的左右侧边栏和抽屉，转为由置顶导航栏（Navbar）引领的自上而下的流式单页结构。
+- **置顶横向过滤**：分类筛选系统横向排开并固定置顶，方便高频高效率的点按筛选。
 
-## Elevation & Depth
+## Skill Card Redesign
 
-界面呈现纯平面 (Flat) 堆叠，通常不使用 `box-shadow`。
-仅在卡片悬停 (`hover`) 时，小幅上浮并投出极其细腻、弥散的边缘阴影 (`rgba(0, 0, 0, 0.04)`)，以此展现物理层级的微弱变化。
+Skill Card 是系统核心的承载实体：
 
-## Shapes
+- **结构整合**：不再采用卡片标题外置排版。标题（18-22px Bold）、描述内容（14px 截断）、标签药丸和底部元数据（如 mtime 或是 uses 计数）以及核心操作按钮**必须完全包裹在圆角 16px 的白底卡片容器内**。
+- **轻量浮动与阴影**：Hover 时轻微上浮 `translateY(-2px)`，并增加极其淡雅的扩散阴影，拒绝沉重的深色阴影。
+- **一键极速动作**：卡片底部必须集成 `View (查看详情)`、`Copy (一键复制 Markdown 源码至剪贴板)` 以及 `Download (下载)` 按钮。让使用者无需打开详情也能够瞬间完成技能的拷贝应用。
 
-圆角是界面的温和调节器：
+## Animation
 
-- 卡片采用大圆角 (`lg: 16px`)，凸显模块整体的实体存在感。
-- 按钮和输入框采用中圆角 (`md: 8px`)，保持利落。
-- 药丸搜索框、药丸过滤标签、星标等交互组件采用全圆角 (`full: 9999px`)。
+页面性能与响应速度高于一切。禁止一切与功能无关的全屏转场动画、粒子特效和复杂滚动特效。仅保留：
 
-## Components
+- **Hover Lift**：卡片或按钮 Hover 时微弱的 2px 上浮。
+- **Fade In**：弹窗 Modal 和页面加载时的渐入。
+- **Button Feedback**：按钮按压时的轻微缩水或色深变化。
+- **Drag Feedback**：被拖拽的卡片 (`.is-dragging`) 呈现 `opacity: 0.4` 半透明与 `dashed` 虚线框边框样式，释放时伴随缓动回弹，以贴合 Linear 精致高级的微动交互体验。
 
-- **Card (卡片)**: 采用 `Card` 灰色色块作为容器，内容预览限制在 5 行内，所有关键的标题和标签均在容器外侧下方排布（即外置排版），使得色块内部极其纯净。
-- **Button (按钮)**: 
-  - 主按钮为纯黑底白字；
-  - 危险按钮（如彻底删除）为白底红字配红细虚线边框；
-  - 暗黑模式下，所有按钮的背景与字色会自动做高对比反转。
+## Mobile Guidelines
 
-## Do's and Don'ts
+- 移动端下，所有 Grid 自动切换为 1 列；
+- 顶部大搜索框在窄屏下自动拓宽并固定在顶部；
+- 分类标签在窄屏下自动切换为支持左右手势横向滑动的轨道式面板；
+- 所有的操作按钮高度必须在 `38px` 以上以利于手指触摸。
 
-- **Do**: 保持卡片内部的纯净度，让文本自然截断，任何元数据都置于卡片底部外部；
-- **Do**: 使用极细线条图标 (stroke: 1.5px)；
-- **Don't**: 禁止在页面中引入任何硬编码的“魔术数值”（如引入未经定义的渐变色或非标圆角）；
-- **Don't**: 严禁在非警示区域滥用 `Accent` 红色。
+## Selection Mode Guidelines
+
+多选模式下需遵循一致的 SaaS 级精修细节：
+
+- **极简单色选框**：采用单色复选框，选中状态为纯黑（浅色模式）或纯白（暗黑模式），以无衬线高对比度为基调，严禁引入圆润彩色复选框。
+- **防止遮挡位移**：当多选框滑入时，卡片内的徽标 Badge 及其他靠近边缘的文本需伴随 `transition: margin-left 0.2s cubic-bezier(0.16, 1, 0.3, 1)` 平滑避让，避免任何视觉重叠。
+- **严密指针规范**：常规状态下所有 Hover 元素的鼠标指针必须保持为标准的点击手型 `pointer` 以防看不清指针，仅在真正进行拖拽排序换位时转换为 `grabbing`，确保指针操作的语义和对比度清晰。
+- **浮动控制条药丸**：置底的多选操作控制条采用毛玻璃微透面板，边缘有 1px 极细微光，淡入淡出并伴有轻微的物理物理下滑滑出微动动画。
+

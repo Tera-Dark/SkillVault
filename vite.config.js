@@ -10,7 +10,7 @@ export default defineConfig({
     host: true, // 允许局域网访问前端
     proxy: {
       '/api': {
-        target: 'http://localhost:23333',
+        target: 'http://127.0.0.1:23335',
         changeOrigin: true,
       },
     },
